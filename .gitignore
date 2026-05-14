@@ -1,0 +1,7 @@
+.build/
+.dbg/
+.DS_Store
+*.xcuserdata/
+DerivedData/
+*.log
+*.ndjson
