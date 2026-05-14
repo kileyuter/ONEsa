@@ -1,10 +1,10 @@
 # ONEsa
 
-ONEsa 是一个 macOS 原生极简悬浮客户端。v0.1 聚焦一个核心交互：**one sentence anytime**，用户可以随时用一句话向模型发起输入，并通过桌面边缘接收模型回复。
+ONEsa 是一个 macOS 原生极简悬浮客户端。它聚焦一个核心交互：**one sentence anytime**，用户可以随时用一句话向模型发起输入，并通过桌面边缘接收模型回复。
 
 ## 版本
 
-- 当前版本：`v0.1`
+- 当前版本：`v0.2`
 - 运行形态：`LSUIElement` 后台应用，无 Dock 图标
 - 技术栈：Swift、SwiftUI、AppKit、Swift Package Manager
 - 最低系统：macOS 14
@@ -47,6 +47,7 @@ ONEsa/
 │   ├── ChatWindowView.swift
 │   ├── MessagePresentation.swift
 │   └── ...
+├── LICENSE
 ├── Package.swift
 └── README.md
 ```
@@ -103,4 +104,8 @@ v0.1 使用独立的 Keychain service 命名空间。若从开发过程版本升
 
 ## 版本管理
 
-v0.1 是清洗后的纯净项目版本，仅保留运行所需源码、资源、构建脚本和项目说明。调试日志、过程文档、原型文件、测试目录和构建产物不纳入版本。
+v0.2 是当前公开源码版本，已完成 ONEsa 命名、右侧浮窗交互修复和发布构建流程固化。调试日志、过程文档、原型文件、测试目录和构建产物不纳入版本。
+
+## License
+
+This project is released under the MIT License. See [LICENSE](LICENSE) for details.
