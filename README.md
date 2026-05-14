@@ -72,12 +72,6 @@ swift build --disable-sandbox
 .build/app/debug/ONEsa.app
 ```
 
-生成小范围分发 zip 与安装说明：
-
-```bash
-./Scripts/build-release-zip.sh
-```
-
 ## 配置
 
 首次运行后，在设置窗口中填写：
