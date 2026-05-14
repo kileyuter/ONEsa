@@ -1,64 +1,106 @@
-# OpenClaw Floating Client
+# ONEsa
 
-OpenClaw 的 macOS 极简悬浮客户端，使用 SwiftUI + AppKit 实现。应用以 `LSUIElement` 方式运行，默认不展示 Dock 图标，边缘悬浮入口负责消息提醒和未读浏览，中央 Command Input 负责快速发送。
+ONEsa 是一个 macOS 原生极简悬浮客户端。v0.1 聚焦一个核心交互：**one sentence anytime**，用户可以随时用一句话向模型发起输入，并通过桌面边缘接收模型回复。
 
-## 当前能力
+## 版本
 
-- 悬浮入口支持 6px 贴边细条、状态点、未读徽标、边缘通知卡片和未读浏览。
-- 已接入未读 turn 队列、2 秒已读规则、全屏自动隐藏与恢复。
-- 已接入轻量入口快捷操作：
-  - `Option + Space` 打开或聚焦中央 Command Input
-  - `Esc` 收起中央输入或当前未读浏览
-  - 双击悬浮入口在有未读时进入未读浏览，否则打开中央输入
-  - 右键悬浮入口打开极简菜单
-- 完整对话窗与设置窗均使用 `NSPanel` 承载 SwiftUI 内容。
+- 当前版本：`v0.1`
+- 运行形态：`LSUIElement` 后台应用，无 Dock 图标
+- 技术栈：Swift、SwiftUI、AppKit、Swift Package Manager
+- 最低系统：macOS 14
+
+## 核心能力
+
+- `Option + Space` 唤起中央输入条，输入一句话后回车发送。
+- 边缘悬浮入口展示监听、输出、未读和断连等状态。
+- 收到回复时从桌面边缘弹出通知，并进入未读 turn 队列。
+- 有未读时支持浏览、自动已读倒计时和状态收敛。
+- 完整聊天窗口用于查看历史消息、富文本内容和必要的会话操作。
+- 设置窗口用于配置飞书 App、OAuth、目标会话和 AI sender 过滤条件。
+
+## 消息展示
+
+- 支持 Markdown 基础结构：标题、段落、引用、列表、代码块、分隔线和内联样式。
+- 支持解析常见飞书富文本结构，并优先提取可读文本内容。
+- 图片、文件、视频、表格等暂不直接渲染的内容会显示占位卡，并提供飞书查看入口。
 
 ## 消息链路
 
-1. 用户在中央 Command Input 或完整聊天窗输入文本。
-2. 客户端通过飞书消息接口把文本发送到目标 `chat_id`。
-3. 后台轮询飞书会话，只消费匹配 `OpenClaw sender id/type` 的回复。
-4. 回复进入本地消息历史，并按 turn 聚合为悬浮入口展示与未读队列。
-5. 当聊天窗未激活时，悬浮入口以边缘通知、未读徽标或未读浏览模式承接新回复。
+1. 用户通过中央输入条或完整聊天窗口发送文本。
+2. 客户端调用飞书消息接口，把文本发送到目标 `chat_id`。
+3. 后台轮询目标会话，只消费匹配 AI sender 过滤条件的回复。
+4. 回复进入本地消息历史，并按 turn 聚合为边缘通知、未读徽标和未读浏览。
+5. 完整聊天窗口未激活时，新回复会进入未读队列并触发边缘提示。
 
-## 安全边界
+## 项目结构
 
-- 本项目不是端到端加密客户端；消息内容会经过飞书开放平台与目标会话。
-- `app_secret`、`user_access_token`、`refresh_token` 仅保存在 macOS Keychain。
-- 普通配置如 `app_id`、`redirect_uri`、`chat_id`、sender 过滤条件保存在本机 `UserDefaults`。
-- 本地聊天历史会保存在 `UserDefaults`，仅用于下次启动恢复最近会话。
-- 客户端只按 sender 过滤规则读取 OpenClaw 回复，不会主动遍历无关会话历史。
-
-## 本地缓存与日志
-
-- 聊天历史：保留最近 80 条消息，存于 `UserDefaults`。
-- 去重/同步状态：飞书轮询的元数据会存于本地 `UserDefaults`。
-- 悬浮位置：贴边方向与纵向锚点位置会存于 `UserDefaults`。
-- 敏感凭证：全部存于 Keychain，不写入源码仓库或普通配置文件。
-- DEBUG 调试事件：`DEBUG` 构建下会向本机 `http://127.0.0.1:7777/event` 发送诊断事件，用于本地调试输入与悬浮交互；默认不写入独立持久日志文件。
-
-## 卸载与清理
-
-卸载应用前，如需一并清理本地数据，建议执行以下步骤：
-
-1. 删除应用本体或构建产物目录。
-2. 从 Keychain 删除当前服务名下的 `app_secret`、`user_access_token`、`refresh_token`。
-3. 清理应用对应的 `UserDefaults` 域，移除聊天历史、配置、同步状态和悬浮位置。
-4. 如曾启用本地调试服务器，额外删除工作区中的 `.dbg/` 调试文件。
+```text
+ONEsa/
+├── AppResources/
+│   └── Info.plist
+├── Scripts/
+│   ├── build-app-bundle.sh
+│   └── build-release-zip.sh
+├── Sources/
+│   ├── AppStateModel.swift
+│   ├── FloatingWindowController.swift
+│   ├── ChatWindowView.swift
+│   ├── MessagePresentation.swift
+│   └── ...
+├── Package.swift
+└── README.md
+```
 
 ## 构建
 
-当前环境可以先使用 Swift Package Manager 做源码级验证：
+源码构建：
 
 ```bash
-swift test --disable-sandbox
 swift build --disable-sandbox
 ```
 
-构建本地 `.app` bundle 并校验 `LSUIElement=true`：
+构建本地 `.app` bundle：
 
 ```bash
 ./Scripts/build-app-bundle.sh debug
 ```
 
-如果后续切换到完整 Xcode，请确保 target 继续使用 `AppResources/Info.plist`，以保留 `LSUIElement=true` 的后台应用形态。
+构建产物路径：
+
+```text
+.build/app/debug/ONEsa.app
+```
+
+生成小范围分发 zip 与安装说明：
+
+```bash
+./Scripts/build-release-zip.sh
+```
+
+## 配置
+
+首次运行后，在设置窗口中填写：
+
+- 飞书 App ID
+- 飞书 App Secret
+- Loopback Redirect URI
+- 目标 `chat_id`
+- AI sender ID
+- AI sender type
+- OAuth scopes
+
+敏感凭证保存到 macOS Keychain，普通配置保存到本机 `UserDefaults`。
+
+v0.1 使用独立的 Keychain service 命名空间。若从开发过程版本升级，首次运行后需要重新保存一次 `app_secret`，再发起飞书授权。
+
+## 数据与安全
+
+- 本项目不是端到端加密客户端；消息内容会经过飞书开放平台与目标会话。
+- `app_secret`、`user_access_token`、`refresh_token` 保存到 macOS Keychain。
+- `app_id`、`redirect_uri`、`chat_id`、sender 过滤条件保存到 `UserDefaults`。
+- 本地聊天历史仅用于恢复最近会话，默认保留最近 80 条消息。
+- 客户端只按 sender 过滤规则读取 AI 回复，不主动遍历无关会话。
+
+## 版本管理
+
+v0.1 是清洗后的纯净项目版本，仅保留运行所需源码、资源、构建脚本和项目说明。调试日志、过程文档、原型文件、测试目录和构建产物不纳入版本。

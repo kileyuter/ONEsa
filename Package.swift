@@ -2,20 +2,20 @@
 import PackageDescription
 
 let package = Package(
-    name: "OpenClawFloatingClient",
+    name: "ONEsa",
     defaultLocalization: "zh-Hans",
     platforms: [
         .macOS(.v14)
     ],
     products: [
         .executable(
-            name: "OpenClawFloatingClient",
-            targets: ["OpenClawFloatingClient"]
+            name: "ONEsa",
+            targets: ["ONEsa"]
         )
     ],
     targets: [
         .executableTarget(
-            name: "OpenClawFloatingClient",
+            name: "ONEsa",
             path: "Sources"
         )
     ]

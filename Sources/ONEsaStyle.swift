@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum OpenClawStyle {
+enum ONEsaStyle {
     enum CornerRadius {
         static let panel: CGFloat = 18
         static let card: CGFloat = 18
@@ -37,8 +37,8 @@ enum OpenClawStyle {
 }
 
 extension View {
-    func openClawSurface(
-        cornerRadius: CGFloat = OpenClawStyle.CornerRadius.card,
+    func onesaSurface(
+        cornerRadius: CGFloat = ONEsaStyle.CornerRadius.card,
         usesDarkStroke: Bool = false
     ) -> some View {
         background(
@@ -46,14 +46,14 @@ extension View {
                 .fill(.regularMaterial)
                 .overlay {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(usesDarkStroke ? OpenClawStyle.Stroke.dark : OpenClawStyle.Stroke.light, lineWidth: 1)
+                        .strokeBorder(usesDarkStroke ? ONEsaStyle.Stroke.dark : ONEsaStyle.Stroke.light, lineWidth: 1)
                 }
         )
-        .openClawDirectionalShadow(cornerRadius: cornerRadius)
+        .onesaDirectionalShadow(cornerRadius: cornerRadius)
     }
 
-    func openClawFloatingSurface(
-        cornerRadius: CGFloat = OpenClawStyle.CornerRadius.panel,
+    func onesaFloatingSurface(
+        cornerRadius: CGFloat = ONEsaStyle.CornerRadius.panel,
         includeStroke: Bool = false
     ) -> some View {
         background(
@@ -62,14 +62,14 @@ extension View {
                 .overlay {
                     if includeStroke {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .strokeBorder(OpenClawStyle.Stroke.light.opacity(0.55), lineWidth: 1)
+                            .strokeBorder(ONEsaStyle.Stroke.light.opacity(0.55), lineWidth: 1)
                     }
                 }
         )
-        .openClawDirectionalShadow(cornerRadius: cornerRadius)
+        .onesaDirectionalShadow(cornerRadius: cornerRadius)
     }
 
-    func openClawChatSurface(
+    func onesaChatSurface(
         cornerRadius: CGFloat = 14,
         includeShadow: Bool = false
     ) -> some View {
@@ -77,23 +77,23 @@ extension View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor).gradient)
         )
-        .openClawChatShadow(includeShadow)
+        .onesaChatShadow(includeShadow)
     }
 
-    func openClawDirectionalShadow(
-        cornerRadius: CGFloat = OpenClawStyle.CornerRadius.card,
-        primary: Color = OpenClawStyle.Shadow.primary,
-        primaryRadius: CGFloat = OpenClawStyle.Shadow.primaryRadius,
-        primaryY: CGFloat = OpenClawStyle.Shadow.primaryY,
-        contact: Color = OpenClawStyle.Shadow.contact,
-        contactRadius: CGFloat = OpenClawStyle.Shadow.contactRadius,
-        contactY: CGFloat = OpenClawStyle.Shadow.contactY
+    func onesaDirectionalShadow(
+        cornerRadius: CGFloat = ONEsaStyle.CornerRadius.card,
+        primary: Color = ONEsaStyle.Shadow.primary,
+        primaryRadius: CGFloat = ONEsaStyle.Shadow.primaryRadius,
+        primaryY: CGFloat = ONEsaStyle.Shadow.primaryY,
+        contact: Color = ONEsaStyle.Shadow.contact,
+        contactRadius: CGFloat = ONEsaStyle.Shadow.contactRadius,
+        contactY: CGFloat = ONEsaStyle.Shadow.contactY
     ) -> some View {
         background(
             GeometryReader { geo in
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(Color.clear)
-                    .openClawRawShadow(
+                    .onesaRawShadow(
                         primary: primary,
                         primaryRadius: primaryRadius,
                         primaryY: primaryY,
@@ -114,7 +114,7 @@ extension View {
         )
     }
 
-    private func openClawRawShadow(
+    private func onesaRawShadow(
         primary: Color,
         primaryRadius: CGFloat,
         primaryY: CGFloat,
@@ -127,16 +127,16 @@ extension View {
     }
 
     @ViewBuilder
-    private func openClawChatShadow(_ includeShadow: Bool) -> some View {
+    private func onesaChatShadow(_ includeShadow: Bool) -> some View {
         if includeShadow {
-            openClawDirectionalShadow(
+            onesaDirectionalShadow(
                 cornerRadius: 14,
-                primary: OpenClawStyle.Shadow.inputPrimary,
-                primaryRadius: OpenClawStyle.Shadow.inputPrimaryRadius,
-                primaryY: OpenClawStyle.Shadow.inputPrimaryY,
-                contact: OpenClawStyle.Shadow.inputContact,
-                contactRadius: OpenClawStyle.Shadow.inputContactRadius,
-                contactY: OpenClawStyle.Shadow.inputContactY
+                primary: ONEsaStyle.Shadow.inputPrimary,
+                primaryRadius: ONEsaStyle.Shadow.inputPrimaryRadius,
+                primaryY: ONEsaStyle.Shadow.inputPrimaryY,
+                contact: ONEsaStyle.Shadow.inputContact,
+                contactRadius: ONEsaStyle.Shadow.inputContactRadius,
+                contactY: ONEsaStyle.Shadow.inputContactY
             )
         } else {
             self

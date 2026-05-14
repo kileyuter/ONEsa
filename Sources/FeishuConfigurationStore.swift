@@ -4,8 +4,8 @@ struct FeishuStoredConfiguration: Codable, Equatable {
     var appID: String
     var redirectURI: String
     var targetChatID: String
-    var openClawSenderID: String
-    var openClawSenderType: String
+    var aiSenderID: String
+    var aiSenderType: String
     var scopes: String
     var tokenExpiresAt: Date?
 
@@ -13,8 +13,8 @@ struct FeishuStoredConfiguration: Codable, Equatable {
         appID: "",
         redirectURI: "http://127.0.0.1:18765/callback",
         targetChatID: "",
-        openClawSenderID: "",
-        openClawSenderType: "",
+        aiSenderID: "",
+        aiSenderType: "",
         scopes: "im:message im:message.send_as_user im:message.p2p_msg:get_as_user im:message.group_msg:get_as_user",
         tokenExpiresAt: nil
     )
@@ -23,8 +23,10 @@ struct FeishuStoredConfiguration: Codable, Equatable {
         case appID
         case redirectURI
         case targetChatID
-        case openClawSenderID
-        case openClawSenderType
+        case aiSenderID
+        case aiSenderType
+        case legacyOpenClawSenderID = "openClawSenderID"
+        case legacyOpenClawSenderType = "openClawSenderType"
         case scopes
         case tokenExpiresAt
     }
@@ -33,16 +35,16 @@ struct FeishuStoredConfiguration: Codable, Equatable {
         appID: String,
         redirectURI: String,
         targetChatID: String,
-        openClawSenderID: String,
-        openClawSenderType: String,
+        aiSenderID: String,
+        aiSenderType: String,
         scopes: String,
         tokenExpiresAt: Date?
     ) {
         self.appID = appID
         self.redirectURI = redirectURI
         self.targetChatID = targetChatID
-        self.openClawSenderID = openClawSenderID
-        self.openClawSenderType = openClawSenderType
+        self.aiSenderID = aiSenderID
+        self.aiSenderType = aiSenderType
         self.scopes = scopes
         self.tokenExpiresAt = tokenExpiresAt
     }
@@ -52,10 +54,25 @@ struct FeishuStoredConfiguration: Codable, Equatable {
         appID = try container.decode(String.self, forKey: .appID)
         redirectURI = try container.decode(String.self, forKey: .redirectURI)
         targetChatID = try container.decode(String.self, forKey: .targetChatID)
-        openClawSenderID = try container.decodeIfPresent(String.self, forKey: .openClawSenderID) ?? ""
-        openClawSenderType = try container.decodeIfPresent(String.self, forKey: .openClawSenderType) ?? ""
+        aiSenderID = try container.decodeIfPresent(String.self, forKey: .aiSenderID)
+            ?? container.decodeIfPresent(String.self, forKey: .legacyOpenClawSenderID)
+            ?? ""
+        aiSenderType = try container.decodeIfPresent(String.self, forKey: .aiSenderType)
+            ?? container.decodeIfPresent(String.self, forKey: .legacyOpenClawSenderType)
+            ?? ""
         scopes = try container.decode(String.self, forKey: .scopes)
         tokenExpiresAt = try container.decodeIfPresent(Date.self, forKey: .tokenExpiresAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(appID, forKey: .appID)
+        try container.encode(redirectURI, forKey: .redirectURI)
+        try container.encode(targetChatID, forKey: .targetChatID)
+        try container.encode(aiSenderID, forKey: .aiSenderID)
+        try container.encode(aiSenderType, forKey: .aiSenderType)
+        try container.encode(scopes, forKey: .scopes)
+        try container.encodeIfPresent(tokenExpiresAt, forKey: .tokenExpiresAt)
     }
 
     var isReadyForAuthorization: Bool {
@@ -67,9 +84,9 @@ struct FeishuStoredConfiguration: Codable, Equatable {
         !targetChatID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    var hasOpenClawSenderFilter: Bool {
-        !openClawSenderID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !openClawSenderType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    var hasAISenderFilter: Bool {
+        !aiSenderID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !aiSenderType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
@@ -82,7 +99,7 @@ struct FeishuConnectionSnapshot: Equatable {
     var isConfigured: Bool {
         configuration.isReadyForAuthorization
             && configuration.hasTargetChat
-            && configuration.hasOpenClawSenderFilter
+            && configuration.hasAISenderFilter
             && hasAppSecret
     }
 

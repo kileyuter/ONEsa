@@ -2,7 +2,7 @@ import Foundation
 
 final class ChatHistoryStore {
     private enum Keys {
-        static let messages = "openclaw.chat.history.messages"
+        static let messages = "onesa.chat.history.messages"
     }
 
     private let userDefaults: UserDefaults

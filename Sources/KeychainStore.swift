@@ -38,7 +38,7 @@ final class KeychainStore {
 
     private let service: String
 
-    init(service: String = "OpenClawFloatingClient.v0.1.FeishuOAuth") {
+    init(service: String = "ONEsa.v0.1.FeishuOAuth") {
         self.service = service
     }
 

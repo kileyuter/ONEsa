@@ -40,7 +40,7 @@ struct ChatWindowView: View {
                 Label("设置", systemImage: "gearshape")
             }
             .buttonStyle(.borderless)
-            .font(OpenClawStyle.Typography.body)
+            .font(ONEsaStyle.Typography.body)
             .help("打开飞书应用配置和 OAuth 授权设置")
 
             if !appState.messages.isEmpty {
@@ -50,12 +50,12 @@ struct ChatWindowView: View {
                     Label("清空会话", systemImage: "trash")
                 }
                 .buttonStyle(.borderless)
-                .font(OpenClawStyle.Typography.body)
+                .font(ONEsaStyle.Typography.body)
                 .help(UserFacingCopy.Chat.clearHistoryTooltip)
             }
         }
         .padding(10)
-        .openClawSurface(cornerRadius: OpenClawStyle.CornerRadius.card)
+        .onesaSurface(cornerRadius: ONEsaStyle.CornerRadius.card)
         .padding(10)
     }
 
@@ -154,7 +154,7 @@ struct ChatWindowView: View {
                     Label("发送", systemImage: "paperplane.fill")
                 }
                 .keyboardShortcut(.return, modifiers: .command)
-                .font(OpenClawStyle.Typography.body)
+                .font(ONEsaStyle.Typography.body)
                 .disabled(
                     draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || appState.isSendingMessage
@@ -163,7 +163,7 @@ struct ChatWindowView: View {
             }
         }
         .padding(10)
-        .openClawSurface(cornerRadius: OpenClawStyle.CornerRadius.card)
+        .onesaSurface(cornerRadius: ONEsaStyle.CornerRadius.card)
         .padding(10)
     }
 
@@ -210,7 +210,7 @@ struct ChatWindowView: View {
             if elapsedSeconds >= 30 {
                 return "已等待 \(elapsedText)，任务可能仍在运行；收起窗口后后台会继续监听。"
             }
-            return "已等待 \(elapsedText)，正在轮询 OpenClaw 回复。"
+            return "已等待 \(elapsedText)，正在轮询 AI 回复。"
         case .timedOut:
             return "后台仍会继续监听该会话中的新消息。"
         }
@@ -305,6 +305,8 @@ private struct EmptyHistoryView: View {
         switch recoveryState.kind {
         case .configurationRequired:
             "gearshape"
+        case .keychainAccessRequired:
+            "key.fill"
         case .authorizationRequired, .authorizationExpired:
             "person.crop.circle.badge.exclamationmark"
         case .ready:
@@ -318,6 +320,8 @@ private struct EmptyHistoryView: View {
         switch recoveryState.kind {
         case .configurationRequired:
             "尚未完成配置"
+        case .keychainAccessRequired:
+            recoveryState.title
         case .authorizationRequired, .authorizationExpired:
             recoveryState.title
         case .ready:
@@ -329,7 +333,7 @@ private struct EmptyHistoryView: View {
 
     private var detail: String {
         switch recoveryState.kind {
-        case .configurationRequired, .authorizationRequired, .authorizationExpired, .agentOffline, .invalidChat:
+        case .configurationRequired, .keychainAccessRequired, .authorizationRequired, .authorizationExpired, .agentOffline, .invalidChat:
             recoveryState.detail
         case .ready:
             UserFacingCopy.Chat.emptyHistoryConfigured
@@ -340,6 +344,8 @@ private struct EmptyHistoryView: View {
         switch recoveryState.kind {
         case .configurationRequired:
             .orange
+        case .keychainAccessRequired:
+            .yellow
         case .authorizationRequired, .authorizationExpired:
             .yellow
         case .ready:
@@ -389,16 +395,16 @@ private struct MessageBubbleView: View {
                     .padding(.vertical, 9)
                     .background(backgroundStyle, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .shadow(
-                        color: message.sender == .user ? .clear : OpenClawStyle.Shadow.primary,
-                        radius: message.sender == .user ? 0 : OpenClawStyle.Shadow.primaryRadius,
+                        color: message.sender == .user ? .clear : ONEsaStyle.Shadow.primary,
+                        radius: message.sender == .user ? 0 : ONEsaStyle.Shadow.primaryRadius,
                         x: 0,
-                        y: message.sender == .user ? 0 : OpenClawStyle.Shadow.primaryY
+                        y: message.sender == .user ? 0 : ONEsaStyle.Shadow.primaryY
                     )
                     .shadow(
-                        color: message.sender == .user ? .clear : OpenClawStyle.Shadow.contact,
-                        radius: message.sender == .user ? 0 : OpenClawStyle.Shadow.contactRadius,
+                        color: message.sender == .user ? .clear : ONEsaStyle.Shadow.contact,
+                        radius: message.sender == .user ? 0 : ONEsaStyle.Shadow.contactRadius,
                         x: 0,
-                        y: message.sender == .user ? 0 : OpenClawStyle.Shadow.contactY
+                        y: message.sender == .user ? 0 : ONEsaStyle.Shadow.contactY
                     )
                     .contextMenu {
                         Button("复制消息") {

@@ -18,7 +18,7 @@ struct FeishuMessageSyncState: Codable, Equatable {
 
 final class FeishuMessageSyncStore {
     private enum Keys {
-        static let state = "openclaw.feishu.message.sync.state"
+        static let state = "onesa.feishu.message.sync.state"
     }
 
     private let userDefaults: UserDefaults

@@ -6,7 +6,7 @@ struct ContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("OpenClaw 悬浮客户端")
+                Text("ONEsa")
                     .font(.title2)
                     .fontWeight(.semibold)
 

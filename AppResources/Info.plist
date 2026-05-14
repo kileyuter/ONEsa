@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>OpenClaw Floating Client</string>
+	<string>ONEsa</string>
 	<key>CFBundleExecutable</key>
-	<string>OpenClawFloatingClient</string>
+	<string>ONEsa</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.openclaw.floatingclient</string>
+	<string>com.onesa.floatingclient</string>
 	<key>CFBundleName</key>
-	<string>OpenClawFloatingClient</string>
+	<string>ONEsa</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>LSMinimumSystemVersion</key>

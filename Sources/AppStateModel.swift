@@ -43,7 +43,7 @@ enum ChatMessageSender: String, Codable, Equatable {
         case .user:
             "我"
         case .assistant:
-            "OpenClaw"
+            "ONEsa"
         case .system:
             "系统"
         }
@@ -191,7 +191,7 @@ struct ForegroundTaskUIState: Equatable {
         case .sending:
             "正在发送"
         case .waiting:
-            "等待 OpenClaw 回复"
+            "等待 AI 回复"
         case .timedOut:
             "已转后台监听"
         }
@@ -255,6 +255,7 @@ struct RecoveryActionDescriptor: Identifiable, Equatable {
 enum RecoveryStateKind: Equatable {
     case ready
     case configurationRequired
+    case keychainAccessRequired
     case authorizationRequired
     case authorizationExpired
     case agentOffline
@@ -531,8 +532,15 @@ final class AppStateModel: ObservableObject {
             targetChatID: snapshot.configuration.targetChatID
         )
         self.unreadTurnReadDelay = unreadTurnReadDelay
-        updateBackgroundPolling()
-        attemptStartupTokenRefreshIfNeeded()
+        if shouldRequireKeychainAccessPreflight(for: snapshot) {
+            recoveryIssue = RecoveryIssue(
+                kind: .keychainAccessRequired,
+                message: UserFacingCopy.Recovery.keychainAccessRequiredDetail
+            )
+        } else {
+            updateBackgroundPolling()
+            attemptStartupTokenRefreshIfNeeded()
+        }
     }
 
     var feishuConfiguration: FeishuStoredConfiguration {
@@ -780,8 +788,8 @@ final class AppStateModel: ObservableObject {
         appSecret: String,
         redirectURI: String,
         targetChatID: String,
-        openClawSenderID: String,
-        openClawSenderType: String,
+        aiSenderID: String,
+        aiSenderType: String,
         scopes: String
     ) -> Bool {
         do {
@@ -790,8 +798,8 @@ final class AppStateModel: ObservableObject {
                 appSecret: appSecret,
                 redirectURI: redirectURI,
                 targetChatID: targetChatID,
-                openClawSenderID: openClawSenderID,
-                openClawSenderType: openClawSenderType,
+                aiSenderID: aiSenderID,
+                aiSenderType: aiSenderType,
                 scopes: scopes
             )
             applySnapshot(oauthService.loadSnapshot())
@@ -1331,12 +1339,12 @@ final class AppStateModel: ObservableObject {
             ),
             SetupChecklistItem(
                 id: "sender_filter",
-                title: "OpenClaw sender 过滤",
-                detail: configuration.hasOpenClawSenderFilter
-                    ? "已配置 sender id 和 sender type，只会读取 OpenClaw 的回复。"
-                    : "尚未填写 sender id/type，系统无法可靠区分 OpenClaw 回复和其他消息。",
+                title: "AI sender 过滤",
+                detail: configuration.hasAISenderFilter
+                    ? "已配置 sender id 和 sender type，只会读取 AI 的回复。"
+                    : "尚未填写 sender id/type，系统无法可靠区分 AI 回复和其他消息。",
                 group: .required,
-                isMissing: !configuration.hasOpenClawSenderFilter,
+                isMissing: !configuration.hasAISenderFilter,
                 isBlocking: true
             ),
             SetupChecklistItem(
@@ -1456,6 +1464,9 @@ final class AppStateModel: ObservableObject {
     }
 
     private func attemptStartupTokenRefreshIfNeeded() {
+        if recoveryIssue?.kind == .keychainAccessRequired {
+            return
+        }
         guard feishuSnapshot.isConfigured, feishuSnapshot.hasRefreshToken, !feishuSnapshot.hasValidUserAccessToken else {
             return
         }
@@ -1482,6 +1493,13 @@ final class AppStateModel: ObservableObject {
     }
 
     private func updateBackgroundPolling() {
+        if recoveryIssue?.kind == .keychainAccessRequired {
+            backgroundPollingTask?.cancel()
+            backgroundPollingTask = nil
+            pollingUIState.status = .paused(pollingPauseReason)
+            pollingUIState.nextRetryAt = nil
+            return
+        }
         if shouldRunBackgroundPolling {
             guard backgroundPollingTask == nil else {
                 return
@@ -1515,9 +1533,13 @@ final class AppStateModel: ObservableObject {
             && (feishuSnapshot.hasValidUserAccessToken || feishuSnapshot.hasRefreshToken)
             && !isAuthorizing
             && !isSendingMessage
+            && recoveryIssue?.kind != .keychainAccessRequired
     }
 
     private var pollingPauseReason: String {
+        if recoveryIssue?.kind == .keychainAccessRequired {
+            return UserFacingCopy.Recovery.keychainAccessRequiredDetail
+        }
         if isAuthorizing {
             return "飞书授权进行中，暂时暂停后台监听。"
         }
@@ -1525,9 +1547,17 @@ final class AppStateModel: ObservableObject {
             return "前台正在等待当前任务，后台监听会在结束后继续。"
         }
         if !feishuSnapshot.isConfigured {
-            return "请先完成飞书应用、目标会话和 OpenClaw sender 配置。"
+            return "请先完成飞书应用、目标会话和 AI sender 配置。"
         }
         return "请完成飞书授权后开启后台监听。"
+    }
+
+    private func shouldRequireKeychainAccessPreflight(for snapshot: FeishuConnectionSnapshot) -> Bool {
+        snapshot.isConfigured
+            && (snapshot.hasUserAccessToken || snapshot.hasRefreshToken)
+            && recoveryIssue?.kind != .keychainAccessRequired
+            && !isAuthorizing
+            && !isSendingMessage
     }
 
     private var nextBackgroundPollingInterval: TimeInterval {
@@ -1934,6 +1964,21 @@ final class AppStateModel: ObservableObject {
                     secondaryAction: nil,
                     blocksSending: true
                 )
+            case .keychainAccessRequired:
+                return RecoveryStateProjection(
+                    kind: .keychainAccessRequired,
+                    title: UserFacingCopy.Recovery.keychainAccessRequiredTitle,
+                    detail: recoveryIssue.message,
+                    primaryAction: RecoveryActionDescriptor(
+                        kind: .reconnect,
+                        title: UserFacingCopy.Recovery.keychainAccessContinueAction
+                    ),
+                    secondaryAction: RecoveryActionDescriptor(
+                        kind: .openSettings,
+                        title: UserFacingCopy.Recovery.openSettingsAction
+                    ),
+                    blocksSending: true
+                )
             case .authorizationRequired:
                 return RecoveryStateProjection(
                     kind: .authorizationRequired,
@@ -2033,6 +2078,11 @@ final class AppStateModel: ObservableObject {
 
     private static func recoveryIssue(for error: Error) -> RecoveryIssue? {
         switch error {
+        case let error as KeychainStoreError where error.isAuthenticationFailure:
+            return RecoveryIssue(
+                kind: .keychainAccessRequired,
+                message: UserFacingCopy.Recovery.keychainAccessRequiredDetail
+            )
         case FeishuOAuthError.missingRefreshToken:
             return RecoveryIssue(
                 kind: .authorizationExpired,

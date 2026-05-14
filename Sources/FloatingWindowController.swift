@@ -24,16 +24,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @MainActor
 final class FloatingWindowController: NSObject {
     private enum BubbleDefaults {
-        static let anchorY = "openclaw.floatingBubble.anchorY"
-        static let edge = "openclaw.floatingBubble.edge"
-        static let displayID = "openclaw.floatingBubble.displayID"
+        static let anchorY = "onesa.floatingBubble.anchorY"
+        static let edge = "onesa.floatingBubble.edge"
+        static let displayID = "onesa.floatingBubble.displayID"
         static let edgeInset: CGFloat = 8
     }
 
     private enum CommandInputDefaults {
-        static let originX = "openclaw.commandInput.originX"
-        static let originY = "openclaw.commandInput.originY"
-        static let displayID = "openclaw.commandInput.displayID"
+        static let originX = "onesa.commandInput.originX"
+        static let originY = "onesa.commandInput.originY"
+        static let displayID = "onesa.commandInput.displayID"
     }
 
     private let appState: AppStateModel
@@ -134,7 +134,7 @@ final class FloatingWindowController: NSObject {
             backing: .buffered,
             defer: false
         )
-        panel.title = "OpenClaw"
+        panel.title = "ONEsa"
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
@@ -159,7 +159,7 @@ final class FloatingWindowController: NSObject {
             backing: .buffered,
             defer: false
         )
-        panel.title = "OpenClaw 设置"
+        panel.title = "ONEsa 设置"
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
@@ -255,48 +255,57 @@ final class FloatingWindowController: NSObject {
 
     private func bindAppState() {
         appState.$isMiniChatExpanded
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateFloatingPanelLayout()
                 self?.refreshHoverMonitor()
             }
             .store(in: &cancellables)
         appState.$floatingNotification
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateFloatingPanelLayout()
             }
             .store(in: &cancellables)
         appState.$displayedAssistantTurn
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateFloatingPanelLayout()
             }
             .store(in: &cancellables)
         appState.$isExpandedConversationPresented
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateFloatingPanelLayout()
                 self?.refreshHoverMonitor()
             }
             .store(in: &cancellables)
         appState.$messages
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateFloatingPanelLayout()
             }
             .store(in: &cancellables)
         appState.$feishuSnapshot
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateFloatingPanelLayout()
             }
             .store(in: &cancellables)
         appState.$recoveryIssue
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateFloatingPanelLayout()
             }
             .store(in: &cancellables)
         appState.$isFloatingHiddenForFullscreen
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateFloatingVisibilityForFullscreen()
             }
             .store(in: &cancellables)
         appState.$isCommandInputPresented
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.syncCommandInputPanel()
             }
@@ -448,7 +457,7 @@ final class FloatingWindowController: NSObject {
         case .openSettings:
             return "打开设置"
         case .quitApplication:
-            return "退出 OpenClaw"
+            return "退出 ONEsa"
         }
     }
 
@@ -1232,8 +1241,8 @@ private struct FloatingCompactPanelView: View {
         ZStack(alignment: .topTrailing) {
             Circle()
                 .fill(stripGradient)
-                .shadow(color: OpenClawStyle.Shadow.primary.opacity(0.5), radius: 8, x: 0, y: 4)
-                .shadow(color: OpenClawStyle.Shadow.contact.opacity(0.5), radius: 3, x: 0, y: 2)
+                .shadow(color: ONEsaStyle.Shadow.primary.opacity(0.5), radius: 8, x: 0, y: 4)
+                .shadow(color: ONEsaStyle.Shadow.contact.opacity(0.5), radius: 3, x: 0, y: 2)
                 .frame(width: FloatingPanelMetrics.orbDiameter, height: FloatingPanelMetrics.orbDiameter)
 
             Image(systemName: primaryGlyphName)
@@ -1268,7 +1277,7 @@ private struct FloatingCompactPanelView: View {
     }
 
     private var miniChatCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: contentAlignment, spacing: 12) {
             if let badgeTitle = appState.currentAssistantTurnBadgeTitle {
                 Text(badgeTitle)
                     .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -1279,7 +1288,7 @@ private struct FloatingCompactPanelView: View {
             }
 
             if let preview = appState.latestAssistantPreviewText, !preview.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: contentAlignment, spacing: 6) {
                     Text(appState.unreadTurnBrowserStatusText == nil ? "最近回复" : "当前 Turn")
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .tracking(0.6)
@@ -1289,19 +1298,24 @@ private struct FloatingCompactPanelView: View {
                         .font(.system(size: 13, weight: .regular, design: .rounded))
                         .lineSpacing(2)
                         .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: frameAlignment)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(12)
-                .openClawSurface(cornerRadius: 15)
+                .onesaSurface(cornerRadius: 15)
             }
 
             if let browserStatus = appState.unreadTurnBrowserStatusText {
                 HStack(spacing: 8) {
+                    if side == .trailing {
+                        Spacer()
+                    }
                     Text(browserStatus)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(.secondary)
-                    Spacer()
+                    if side == .leading {
+                        Spacer()
+                    }
                     Button(appState.unreadTurnBrowserActionTitle) {
                         appState.advanceUnreadTurn()
                     }
@@ -1338,12 +1352,13 @@ private struct FloatingCompactPanelView: View {
                     .fill(.thinMaterial)
                     .overlay(
                         Capsule()
-                            .strokeBorder(OpenClawStyle.Stroke.light, lineWidth: 1)
+                            .strokeBorder(ONEsaStyle.Stroke.light, lineWidth: 1)
                     )
             )
+            .frame(maxWidth: .infinity, alignment: frameAlignment)
 
             if let blockingMessage = appState.chatSendReadiness.blockingMessage {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: contentAlignment, spacing: 6) {
                     Text(appState.recoveryState.title)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(.orange)
@@ -1363,7 +1378,7 @@ private struct FloatingCompactPanelView: View {
                 .padding(.horizontal, 8)
             }
         }
-        .frame(width: FloatingPanelMetrics.miniCardWidth, alignment: .leading)
+        .frame(width: FloatingPanelMetrics.miniCardWidth, alignment: frameAlignment)
         .background(ReliableHoverReporter { isHovered in
             appState.floatingHoverChanged(isHovered)
         })
@@ -1393,7 +1408,7 @@ private struct FloatingCompactPanelView: View {
         }
         .padding(14)
         .frame(width: FloatingPanelMetrics.recoveryCardWidth, height: FloatingPanelMetrics.recoveryCardHeight, alignment: .leading)
-        .openClawSurface(cornerRadius: 18)
+        .onesaSurface(cornerRadius: 18)
         .background(ReliableHoverReporter { isHovered in
             appState.floatingHoverChanged(isHovered)
         })
@@ -1403,9 +1418,12 @@ private struct FloatingCompactPanelView: View {
         Button {
             appState.presentUnreadBrowserFromEdge()
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: contentAlignment, spacing: 6) {
                 HStack(spacing: 8) {
-                    Text("OpenClaw 新回复")
+                    if side == .trailing {
+                        Spacer()
+                    }
+                    Text("ONEsa 新回复")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     if let badgeTitle = notification.turn.badge?.title {
@@ -1421,18 +1439,26 @@ private struct FloatingCompactPanelView: View {
                 Text(notification.text)
                     .font(.callout)
                     .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: frameAlignment)
                     .lineLimit(2)
                     .truncationMode(.tail)
             }
             .padding(14)
-            .frame(width: FloatingPanelMetrics.notificationCardWidth, alignment: .leading)
-            .openClawSurface(cornerRadius: 18)
+            .frame(width: FloatingPanelMetrics.notificationCardWidth, alignment: frameAlignment)
+            .onesaSurface(cornerRadius: 18)
         }
         .buttonStyle(.plain)
         .background(ReliableHoverReporter { isHovered in
             appState.floatingHoverChanged(isHovered)
         })
+    }
+
+    private var contentAlignment: HorizontalAlignment {
+        side == .leading ? .leading : .trailing
+    }
+
+    private var frameAlignment: Alignment {
+        side == .leading ? .leading : .trailing
     }
 
     private var stripGradient: LinearGradient {
@@ -1586,7 +1612,7 @@ private struct CommandInputPanelView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .openClawChatSurface(cornerRadius: 18, includeShadow: true)
+        .onesaChatSurface(cornerRadius: 18, includeShadow: true)
         .padding(8)
     }
 

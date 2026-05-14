@@ -124,8 +124,8 @@ final class FeishuOAuthService: @unchecked Sendable {
         appSecret: String?,
         redirectURI: String,
         targetChatID: String,
-        openClawSenderID: String,
-        openClawSenderType: String,
+        aiSenderID: String,
+        aiSenderType: String,
         scopes: String
     ) throws {
         let previousConfiguration = configurationStore.load()
@@ -152,8 +152,8 @@ final class FeishuOAuthService: @unchecked Sendable {
             appID: trimmedAppID,
             redirectURI: trimmedRedirectURI,
             targetChatID: targetChatID.trimmingCharacters(in: .whitespacesAndNewlines),
-            openClawSenderID: openClawSenderID.trimmingCharacters(in: .whitespacesAndNewlines),
-            openClawSenderType: openClawSenderType.trimmingCharacters(in: .whitespacesAndNewlines),
+            aiSenderID: aiSenderID.trimmingCharacters(in: .whitespacesAndNewlines),
+            aiSenderType: aiSenderType.trimmingCharacters(in: .whitespacesAndNewlines),
             scopes: trimmedScopes,
             tokenExpiresAt: authorizationConfigChanged ? nil : previousConfiguration.tokenExpiresAt
         )

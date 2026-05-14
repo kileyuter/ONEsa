@@ -11,12 +11,20 @@ struct SettingsView: View {
     @State private var appSecret = ""
     @State private var redirectURI = ""
     @State private var targetChatID = ""
-    @State private var openClawSenderID = ""
-    @State private var openClawSenderType = ""
+    @State private var aiSenderID = ""
+    @State private var aiSenderType = ""
     @State private var scopes = ""
     @State private var manualAuthorizationCode = ""
     @State private var showsManualAuthorizationForm = false
     @State private var saveFeedback: SaveFeedback?
+    @State private var keychainConsentAction: KeychainConsentAction?
+    @State private var showsKeychainConsentAlert = false
+
+    private enum KeychainConsentAction: Equatable {
+        case saveConfiguration
+        case authorize
+        case submitManualAuthorizationCode
+    }
 
     var body: some View {
         ScrollView {
@@ -30,6 +38,18 @@ struct SettingsView: View {
         }
         .frame(minWidth: 620, minHeight: 680)
         .onAppear(perform: loadDraft)
+        .alert(
+            "需要钥匙串权限",
+            isPresented: $showsKeychainConsentAlert,
+            presenting: keychainConsentAction
+        ) { action in
+            Button("继续") {
+                performKeychainConsentAction(action)
+            }
+            Button("取消", role: .cancel) {}
+        } message: { _ in
+            Text("ONEsa 将访问钥匙串以保存或读取飞书凭证（app_secret / token）。macOS 可能会弹出系统密码或允许访问提示。")
+        }
     }
 
     private var projection: ConfigurationStatusProjection {
@@ -45,8 +65,8 @@ struct SettingsView: View {
         appID = configuration.appID
         redirectURI = configuration.redirectURI
         targetChatID = configuration.targetChatID
-        openClawSenderID = configuration.openClawSenderID
-        openClawSenderType = configuration.openClawSenderType
+        aiSenderID = configuration.aiSenderID
+        aiSenderType = configuration.aiSenderType
         scopes = configuration.scopes
     }
 
@@ -166,13 +186,13 @@ struct SettingsView: View {
 
                 HStack {
                     Button("保存基础配置") {
-                        saveConfiguration()
+                        requestKeychainConsent(for: .saveConfiguration)
                     }
 
                     Spacer()
 
                     Button(primaryAuthorizationActionTitle) {
-                        appState.authorizeWithFeishu()
+                        requestKeychainConsent(for: .authorize)
                     }
                     .disabled(!appState.feishuSnapshot.isConfigured || appState.isAuthorizing)
 
@@ -195,12 +215,12 @@ struct SettingsView: View {
     private var advancedConfigurationCard: some View {
         settingsCard(title: "高级配置区", subtitle: "配置 sender 过滤、scope 与手动授权回退。") {
             VStack(alignment: .leading, spacing: 16) {
-                TextField("OpenClaw sender id", text: $openClawSenderID)
-                TextField("OpenClaw sender type（例如 app）", text: $openClawSenderType)
+                TextField("AI sender id", text: $aiSenderID)
+                TextField("AI sender type（例如 app）", text: $aiSenderType)
                 TextField("OAuth Scope（空格分隔）", text: $scopes, axis: .vertical)
                     .lineLimit(1...3)
 
-                Text("发送者过滤用于轮询回复时只接受 OpenClaw 的消息；可先用 Python PoC 输出的 sender 字段填入。")
+                Text("发送者过滤用于轮询回复时只接受 AI 的消息；可先用 Python PoC 输出的 sender 字段填入。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -215,9 +235,7 @@ struct SettingsView: View {
 
                         HStack {
                             Button("提交授权码") {
-                                let submittedCode = manualAuthorizationCode
-                                appState.submitManualAuthorizationCode(submittedCode)
-                                manualAuthorizationCode = ""
+                                requestKeychainConsent(for: .submitManualAuthorizationCode)
                             }
                             .disabled(!appState.canUseManualAuthorizationCodeFallback || appState.isAuthorizing)
 
@@ -236,7 +254,7 @@ struct SettingsView: View {
 
                 HStack {
                     Button("保存全部配置") {
-                        saveConfiguration()
+                        requestKeychainConsent(for: .saveConfiguration)
                     }
 
                     Spacer()
@@ -263,8 +281,8 @@ struct SettingsView: View {
             appSecret: appSecret,
             redirectURI: redirectURI,
             targetChatID: targetChatID,
-            openClawSenderID: openClawSenderID,
-            openClawSenderType: openClawSenderType,
+            aiSenderID: aiSenderID,
+            aiSenderType: aiSenderType,
             scopes: scopes
         )
         appSecret = ""
@@ -272,6 +290,27 @@ struct SettingsView: View {
             message: appState.configurationStatusMessage,
             isSuccess: didSave
         )
+    }
+
+    private func requestKeychainConsent(for action: KeychainConsentAction) {
+        keychainConsentAction = action
+        showsKeychainConsentAlert = true
+    }
+
+    private func performKeychainConsentAction(_ action: KeychainConsentAction?) {
+        guard let action else {
+            return
+        }
+        switch action {
+        case .saveConfiguration:
+            saveConfiguration()
+        case .authorize:
+            appState.authorizeWithFeishu()
+        case .submitManualAuthorizationCode:
+            let submittedCode = manualAuthorizationCode
+            appState.submitManualAuthorizationCode(submittedCode)
+            manualAuthorizationCode = ""
+        }
     }
 
     private var connectionTint: Color {

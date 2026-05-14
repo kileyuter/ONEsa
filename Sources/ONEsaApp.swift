@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct OpenClawFloatingClientApp: App {
+struct ONEsaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var appState = AppStateModel.shared
 

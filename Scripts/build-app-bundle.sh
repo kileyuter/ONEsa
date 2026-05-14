@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="OpenClawFloatingClient"
+APP_NAME="ONEsa"
 CONFIGURATION="${1:-${CONFIGURATION:-debug}}"
 
 case "${CONFIGURATION}" in

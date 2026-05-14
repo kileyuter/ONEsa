@@ -10,7 +10,7 @@ enum FeishuMessageError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingConfiguration:
-            "请先保存飞书应用配置、目标 chat_id、OpenClaw sender id/type，并完成有效授权。"
+            "请先保存飞书应用配置、目标 chat_id、AI sender id/type，并完成有效授权。"
         case .missingUserAccessToken:
             "未找到可用的 user_access_token，请重新授权。"
         case .invalidURL:
@@ -157,7 +157,7 @@ final class FeishuMessageService: @unchecked Sendable {
 
         let recentIDs = Set(syncState.recentMessageIDs)
         let newMessages = items
-            .compactMap { Self.openClawMessage(from: $0, configuration: context.configuration) }
+            .compactMap { Self.aiMessage(from: $0, configuration: context.configuration) }
             .filter { message in
                 !recentIDs.contains(message.messageID)
                     && (minCreateTime == nil || message.createTime >= minCreateTime!)
@@ -251,7 +251,7 @@ final class FeishuMessageService: @unchecked Sendable {
     private func loadRequestContext() async throws -> FeishuRequestContext {
         _ = try await oauthService.refreshUserAccessTokenIfNeeded()
         let configuration = configurationStore.load()
-        guard configuration.hasTargetChat, configuration.hasOpenClawSenderFilter else {
+        guard configuration.hasTargetChat, configuration.hasAISenderFilter else {
             throw FeishuMessageError.missingConfiguration
         }
         guard let token = try keychainStore.read(account: .userAccessToken), !token.isEmpty else {
@@ -280,11 +280,11 @@ final class FeishuMessageService: @unchecked Sendable {
         return decoded
     }
 
-    private static func openClawMessage(
+    private static func aiMessage(
         from item: FeishuMessageItem,
         configuration: FeishuStoredConfiguration
     ) -> FeishuReplyMessage? {
-        guard isOpenClawSender(item.sender, configuration: configuration) else {
+        guard isAISender(item.sender, configuration: configuration) else {
             return nil
         }
         guard let rawContent = item.body?.content ?? item.content, !rawContent.isEmpty else {
@@ -305,12 +305,12 @@ final class FeishuMessageService: @unchecked Sendable {
         )
     }
 
-    private static func isOpenClawSender(
+    private static func isAISender(
         _ sender: FeishuMessageSender?,
         configuration: FeishuStoredConfiguration
     ) -> Bool {
-        let expectedID = configuration.openClawSenderID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let expectedType = configuration.openClawSenderType.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedID = configuration.aiSenderID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedType = configuration.aiSenderType.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !expectedID.isEmpty, !expectedType.isEmpty else {
             return false
         }
