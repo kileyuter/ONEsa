@@ -39,8 +39,7 @@ ONEsa/
 ├── AppResources/
 │   └── Info.plist
 ├── Scripts/
-│   ├── build-app-bundle.sh
-│   └── build-release-zip.sh
+│   └── build-app-bundle.sh
 ├── Sources/
 │   ├── AppStateModel.swift
 │   ├── FloatingWindowController.swift
