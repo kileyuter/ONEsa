@@ -142,6 +142,8 @@ struct MessagePresentationModel: Equatable {
 }
 
 enum MessagePresentationParser {
+    private static let richTextLocaleKeys = ["zh_cn", "zh-CN", "en_us", "en-US"]
+
     static func parse(
         rawText: String,
         targetChatID: String? = nil,
@@ -320,12 +322,13 @@ enum MessagePresentationParser {
     }
 
     private static func richTextPayload(from dictionary: [String: Any]) -> [String: Any]? {
-        let preferredKeys = ["zh_cn", "zh-CN", "en_us", "en-US"]
-        for key in preferredKeys {
-            if let payload = dictionary[key] as? [String: Any],
-               payload["content"] != nil || payload["title"] != nil {
-                return payload
-            }
+        if let payload = localizedRichTextPayload(from: dictionary) {
+            return payload
+        }
+
+        if let post = dictionary["post"] as? [String: Any],
+           let payload = localizedRichTextPayload(from: post) {
+            return payload
         }
 
         if dictionary["content"] != nil || dictionary["title"] != nil {
@@ -338,6 +341,16 @@ enum MessagePresentationParser {
             }
             return payload["content"] != nil || payload["title"] != nil
         } as? [String: Any]
+    }
+
+    private static func localizedRichTextPayload(from dictionary: [String: Any]) -> [String: Any]? {
+        for key in richTextLocaleKeys {
+            if let payload = dictionary[key] as? [String: Any],
+               payload["content"] != nil || payload["elements"] != nil || payload["title"] != nil {
+                return payload
+            }
+        }
+        return nil
     }
 
     private static func parseRichTextPayload(
@@ -526,6 +539,13 @@ enum MessagePresentationParser {
         from dictionary: [String: Any],
         sourceMessageID: String?
     ) -> [MessagePresentationBlock]? {
+        if let payload = richTextPayload(from: dictionary) {
+            let blocks = parseRichTextPayload(payload, sourceMessageID: sourceMessageID)
+            if !blocks.isEmpty {
+                return blocks
+            }
+        }
+
         let nestedKeys = ["elements", "children", "items", "fields"]
         for key in nestedKeys {
             if let elements = dictionary[key] as? [Any] {
@@ -535,6 +555,15 @@ enum MessagePresentationParser {
                 } else {
                     blocks = parseRichTextParagraph(elements, sourceMessageID: sourceMessageID)
                 }
+                if !blocks.isEmpty {
+                    return blocks
+                }
+            }
+        }
+
+        for key in ["post"] + richTextLocaleKeys {
+            if let nested = dictionary[key] as? [String: Any] {
+                let blocks = parseGenericRichContent(from: nested, sourceMessageID: sourceMessageID)
                 if !blocks.isEmpty {
                     return blocks
                 }
@@ -610,7 +639,7 @@ enum MessagePresentationParser {
                     }
                 }
             }
-            for key in ["elements", "children", "items", "fields", "body"] {
+            for key in ["elements", "children", "items", "fields", "body", "post"] + richTextLocaleKeys {
                 if let nestedValue = dictionary[key] {
                     let text = deepTextString(from: nestedValue, depth: depth + 1)
                         .trimmingCharacters(in: .whitespacesAndNewlines)

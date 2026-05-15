@@ -236,16 +236,87 @@ final class FeishuMessageService: @unchecked Sendable {
             request.httpMethod = "GET"
             request.setValue("Bearer \(userAccessToken)", forHTTPHeaderField: "Authorization")
 
-            let response = try await perform(request, as: FeishuListMessagesResponse.self, operation: "读取消息")
-            let data = response.data
-            collected.append(contentsOf: data?.items ?? [])
-            guard data?.hasMore == true, let nextPageToken = data?.pageToken, !nextPageToken.isEmpty else {
+            let (responseData, urlResponse) = try await session.data(for: request)
+            let response = try decodeResponse(
+                from: responseData,
+                urlResponse: urlResponse,
+                as: FeishuListMessagesResponse.self,
+                operation: "读取消息"
+            )
+            let rawItems = Self.rawMessageItems(from: responseData)
+            let pageItems = response.data?.items ?? []
+            for (index, item) in pageItems.enumerated() {
+                let rawItem = rawItems.indices.contains(index) ? rawItems[index] : nil
+                collected.append(try await resolvedMessageItem(
+                    item,
+                    rawItem: rawItem,
+                    userAccessToken: userAccessToken
+                ))
+            }
+            guard response.data?.hasMore == true,
+                  let nextPageToken = response.data?.pageToken,
+                  !nextPageToken.isEmpty else {
                 break
             }
             pageToken = nextPageToken
         }
 
         return collected
+    }
+
+    private func resolvedMessageItem(
+        _ item: FeishuMessageItem,
+        rawItem: [String: Any]?,
+        userAccessToken: String
+    ) async throws -> FeishuMessageItem {
+        let rawContent = Self.messageContent(from: item)
+        let isDegraded = Self.isDegradedRichContent(rawContent)
+        Self.debugDumpMessageItem(item, rawItem: rawItem, source: "list", force: isDegraded)
+        guard isDegraded else {
+            return item
+        }
+
+        do {
+            let detailed = try await messageDetail(messageID: item.messageID, userAccessToken: userAccessToken)
+            Self.debugDumpMessageItem(detailed.item, rawItem: detailed.rawItem, source: "detail", force: true)
+            let detailedContent = Self.messageContent(from: detailed.item)
+            if !detailedContent.isEmpty, detailedContent != rawContent {
+                Self.debugLog("use detail content for degraded message_id=\(item.messageID)")
+                return detailed.item
+            }
+        } catch {
+            Self.debugLog("detail fetch failed for degraded message_id=\(item.messageID): \(error.localizedDescription)")
+        }
+
+        return item
+    }
+
+    private func messageDetail(
+        messageID: String,
+        userAccessToken: String
+    ) async throws -> (item: FeishuMessageItem, rawItem: [String: Any]?) {
+        guard
+            let encodedMessageID = messageID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+            let url = URL(string: "https://open.feishu.cn/open-apis/im/v1/messages/\(encodedMessageID)")
+        else {
+            throw FeishuMessageError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(userAccessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await session.data(for: request)
+        let decoded = try decodeResponse(
+            from: data,
+            urlResponse: response,
+            as: FeishuGetMessageResponse.self,
+            operation: "读取指定消息"
+        )
+        guard let item = decoded.data?.item else {
+            throw FeishuMessageError.missingSentMessage
+        }
+        return (item: item, rawItem: Self.rawMessageItem(fromDetailResponse: data))
     }
 
     private func loadRequestContext() async throws -> FeishuRequestContext {
@@ -269,7 +340,16 @@ final class FeishuMessageService: @unchecked Sendable {
         operation: String
     ) async throws -> Response {
         let (data, response) = try await session.data(for: request)
-        if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
+        return try decodeResponse(from: data, urlResponse: response, as: responseType, operation: operation)
+    }
+
+    private func decodeResponse<Response: FeishuAPIResponse & Decodable>(
+        from data: Data,
+        urlResponse: URLResponse,
+        as responseType: Response.Type,
+        operation: String
+    ) throws -> Response {
+        if let httpResponse = urlResponse as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
             throw FeishuMessageError.apiError(operation: operation, message: "HTTP \(httpResponse.statusCode)")
         }
 
@@ -334,6 +414,99 @@ final class FeishuMessageService: @unchecked Sendable {
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .contains { !$0.isEmpty && $0 != item.messageID }
         return hasReplyRelationship ? "回复了一条消息" : nil
+    }
+
+    private static func messageContent(from item: FeishuMessageItem) -> String {
+        item.body?.content ?? item.content ?? ""
+    }
+
+    private static func isDegradedRichContent(_ content: String) -> Bool {
+        content.contains("img_v3") || content.contains("请升级至最新版本客户端")
+    }
+
+    private static func rawMessageItems(from responseData: Data) -> [[String: Any]] {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: responseData),
+            let response = object as? [String: Any],
+            let data = response["data"] as? [String: Any],
+            let items = data["items"] as? [[String: Any]]
+        else {
+            return []
+        }
+        return items
+    }
+
+    private static func rawMessageItem(fromDetailResponse responseData: Data) -> [String: Any]? {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: responseData),
+            let response = object as? [String: Any],
+            let data = response["data"] as? [String: Any]
+        else {
+            return nil
+        }
+        if let item = data["item"] as? [String: Any] {
+            return item
+        }
+        if let message = data["message"] as? [String: Any] {
+            return message
+        }
+        if let items = data["items"] as? [[String: Any]] {
+            return items.first
+        }
+        if data["message_id"] != nil {
+            return data
+        }
+        return nil
+    }
+
+    private static func debugDumpMessageItem(
+        _ item: FeishuMessageItem,
+        rawItem: [String: Any]?,
+        source: String,
+        force: Bool
+    ) {
+        guard isDebugBuild, force || isFeishuMessageDebugEnabled else {
+            return
+        }
+        let content = messageContent(from: item)
+        debugLog(
+            "\(source) message_id=\(item.messageID) msg_type=\(item.msgType ?? "nil") "
+                + "content=\(content.prefix(800))"
+        )
+        if isFeishuMessageDebugEnabled, let rawItem, let rawJSON = jsonString(from: rawItem) {
+            debugLog("\(source) raw=\(rawJSON)")
+        }
+    }
+
+    private static func debugLog(_ message: String) {
+        guard isDebugBuild else {
+            return
+        }
+        print("[ONEsa][FeishuMessage] \(message)")
+    }
+
+    private static var isDebugBuild: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    private static var isFeishuMessageDebugEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "onesa.debug.feishu.messages")
+            || ProcessInfo.processInfo.environment["ONESA_DEBUG_FEISHU_MESSAGES"] == "1"
+    }
+
+    private static func jsonString(from object: Any) -> String? {
+        guard
+            JSONSerialization.isValidJSONObject(object),
+            let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted]),
+            let string = String(data: data, encoding: .utf8)
+        else {
+            return nil
+        }
+        return string
     }
 
     private static func isAISender(
@@ -437,8 +610,37 @@ private struct FeishuListMessagesData: Decodable {
     }
 }
 
+private struct FeishuGetMessageResponse: Decodable, FeishuAPIResponse {
+    let code: Int
+    let msg: String?
+    let data: FeishuGetMessageData?
+}
+
+private struct FeishuGetMessageData: Decodable {
+    let item: FeishuMessageItem?
+
+    private enum CodingKeys: String, CodingKey {
+        case item
+        case message
+        case items
+    }
+
+    init(from decoder: Decoder) throws {
+        if let directItem = try? FeishuMessageItem(from: decoder) {
+            item = directItem
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        item = try container.decodeIfPresent(FeishuMessageItem.self, forKey: .item)
+            ?? container.decodeIfPresent(FeishuMessageItem.self, forKey: .message)
+            ?? container.decodeIfPresent([FeishuMessageItem].self, forKey: .items)?.first
+    }
+}
+
 private struct FeishuMessageItem: Decodable {
     let messageID: String
+    let msgType: String?
     let createTime: String?
     let parentID: String?
     let rootID: String?
@@ -449,6 +651,7 @@ private struct FeishuMessageItem: Decodable {
 
     private enum CodingKeys: String, CodingKey {
         case messageID = "message_id"
+        case msgType = "msg_type"
         case createTime = "create_time"
         case parentID = "parent_id"
         case rootID = "root_id"
