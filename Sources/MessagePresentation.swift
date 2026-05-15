@@ -64,6 +64,7 @@ enum MessagePresentationBlock: Equatable {
     case listItem(marker: String, depth: Int, text: String)
     case codeBlock(language: String?, code: String)
     case table(headers: [String], rows: [[String]])
+    case remoteImage(messageID: String, imageKey: String, fallbackText: String?)
     case divider
     case placeholder(kind: MessageRichContentKind)
 
@@ -84,6 +85,8 @@ enum MessagePresentationBlock: Equatable {
             return [headerText, firstRowText]
                 .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 .joined(separator: "\n")
+        case .remoteImage(_, _, let fallbackText):
+            return fallbackText?.isEmpty == false ? fallbackText! : MessageRichContentKind.image.summaryText
         case .divider:
             return ""
         case .placeholder(let kind):
@@ -122,7 +125,8 @@ enum MessagePresentationParser {
     static func parse(
         rawText: String,
         targetChatID: String? = nil,
-        leadingQuoteText: String? = nil
+        leadingQuoteText: String? = nil,
+        sourceMessageID: String? = nil
     ) -> MessagePresentationModel {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -132,7 +136,8 @@ enum MessagePresentationParser {
         if let structuredModel = parseStructuredPayload(
             from: trimmed,
             targetChatID: targetChatID,
-            leadingQuoteText: leadingQuoteText
+            leadingQuoteText: leadingQuoteText,
+            sourceMessageID: sourceMessageID
         ) {
             return structuredModel
         }
@@ -166,7 +171,8 @@ enum MessagePresentationParser {
     private static func parseStructuredPayload(
         from text: String,
         targetChatID: String?,
-        leadingQuoteText: String?
+        leadingQuoteText: String?,
+        sourceMessageID: String?
     ) -> MessagePresentationModel? {
         guard
             let data = text.data(using: .utf8),
@@ -175,28 +181,40 @@ enum MessagePresentationParser {
             return nil
         }
 
-        return parseStructuredObject(object, targetChatID: targetChatID, leadingQuoteText: leadingQuoteText)
+        return parseStructuredObject(
+            object,
+            targetChatID: targetChatID,
+            leadingQuoteText: leadingQuoteText,
+            sourceMessageID: sourceMessageID
+        )
     }
 
     private static func parseStructuredObject(
         _ object: Any,
         targetChatID: String?,
-        leadingQuoteText: String?
+        leadingQuoteText: String?,
+        sourceMessageID: String?
     ) -> MessagePresentationModel? {
         if let string = object as? String {
-            return parse(rawText: string, targetChatID: targetChatID, leadingQuoteText: leadingQuoteText)
+            return parse(
+                rawText: string,
+                targetChatID: targetChatID,
+                leadingQuoteText: leadingQuoteText,
+                sourceMessageID: sourceMessageID
+            )
         }
 
         if let dictionary = object as? [String: Any] {
             return parseStructuredDictionary(
                 dictionary,
                 targetChatID: targetChatID,
-                leadingQuoteText: leadingQuoteText
+                leadingQuoteText: leadingQuoteText,
+                sourceMessageID: sourceMessageID
             )
         }
 
         if let paragraphs = object as? [Any] {
-            let blocks = parseRichTextParagraphs(from: paragraphs)
+            let blocks = parseRichTextParagraphs(from: paragraphs, sourceMessageID: sourceMessageID)
             guard !blocks.isEmpty else {
                 return nil
             }
@@ -209,7 +227,8 @@ enum MessagePresentationParser {
     private static func parseStructuredDictionary(
         _ dictionary: [String: Any],
         targetChatID: String?,
-        leadingQuoteText: String?
+        leadingQuoteText: String?,
+        sourceMessageID: String?
     ) -> MessagePresentationModel? {
         let quoteText = firstNonEmptyString(
             from: [
@@ -227,20 +246,25 @@ enum MessagePresentationParser {
         }
 
         if let content = dictionary["content"] as? String, content != dictionary["text"] as? String {
-            let nested = parse(rawText: content, targetChatID: targetChatID, leadingQuoteText: quoteText)
+            let nested = parse(
+                rawText: content,
+                targetChatID: targetChatID,
+                leadingQuoteText: quoteText,
+                sourceMessageID: sourceMessageID
+            )
             if nested.hasVisibleContent {
                 return nested
             }
         }
 
         if let payload = richTextPayload(from: dictionary) {
-            let blocks = parseRichTextPayload(payload)
+            let blocks = parseRichTextPayload(payload, sourceMessageID: sourceMessageID)
             if !blocks.isEmpty {
                 return buildModel(from: quoteBlocks(from: quoteText) + blocks, targetChatID: targetChatID)
             }
         }
 
-        let extractedBlocks = parseGenericRichContent(from: dictionary)
+        let extractedBlocks = parseGenericRichContent(from: dictionary, sourceMessageID: sourceMessageID)
         if !extractedBlocks.isEmpty {
             return buildModel(
                 from: quoteBlocks(from: quoteText) + extractedBlocks,
@@ -286,7 +310,10 @@ enum MessagePresentationParser {
         } as? [String: Any]
     }
 
-    private static func parseRichTextPayload(_ payload: [String: Any]) -> [MessagePresentationBlock] {
+    private static func parseRichTextPayload(
+        _ payload: [String: Any],
+        sourceMessageID: String?
+    ) -> [MessagePresentationBlock] {
         var blocks: [MessagePresentationBlock] = []
 
         if let title = payload["title"] as? String {
@@ -297,22 +324,32 @@ enum MessagePresentationParser {
         }
 
         if let paragraphs = payload["content"] as? [Any] {
-            blocks.append(contentsOf: parseRichTextParagraphs(from: paragraphs))
+            blocks.append(contentsOf: parseRichTextParagraphs(from: paragraphs, sourceMessageID: sourceMessageID))
+        }
+
+        if let paragraphs = payload["elements"] as? [Any] {
+            blocks.append(contentsOf: parseRichTextParagraphs(from: paragraphs, sourceMessageID: sourceMessageID))
         }
 
         return blocks
     }
 
-    private static func parseRichTextParagraphs(from paragraphs: [Any]) -> [MessagePresentationBlock] {
+    private static func parseRichTextParagraphs(
+        from paragraphs: [Any],
+        sourceMessageID: String?
+    ) -> [MessagePresentationBlock] {
         paragraphs.flatMap { paragraph -> [MessagePresentationBlock] in
             guard let elements = paragraph as? [Any] else {
                 return []
             }
-            return parseRichTextParagraph(elements)
+            return parseRichTextParagraph(elements, sourceMessageID: sourceMessageID)
         }
     }
 
-    private static func parseRichTextParagraph(_ elements: [Any]) -> [MessagePresentationBlock] {
+    private static func parseRichTextParagraph(
+        _ elements: [Any],
+        sourceMessageID: String?
+    ) -> [MessagePresentationBlock] {
         var blocks: [MessagePresentationBlock] = []
         var inlineParts: [String] = []
 
@@ -371,7 +408,7 @@ enum MessagePresentationParser {
                 }
             case "img":
                 flushParagraph()
-                blocks.append(.placeholder(kind: .image))
+                blocks.append(imageBlock(from: dictionary, sourceMessageID: sourceMessageID))
             case "media":
                 flushParagraph()
                 blocks.append(.placeholder(kind: .video))
@@ -384,7 +421,10 @@ enum MessagePresentationParser {
             default:
                 if let text = dictionary["text"] as? String, !text.isEmpty {
                     inlineParts.append(text)
-                } else if let nestedBlocks = nestedRichTextBlocks(from: dictionary), !nestedBlocks.isEmpty {
+                } else if let nestedBlocks = nestedRichTextBlocks(
+                    from: dictionary,
+                    sourceMessageID: sourceMessageID
+                ), !nestedBlocks.isEmpty {
                     flushParagraph()
                     blocks.append(contentsOf: nestedBlocks)
                 } else {
@@ -398,7 +438,10 @@ enum MessagePresentationParser {
         return blocks
     }
 
-    private static func parseGenericRichContent(from dictionary: [String: Any]) -> [MessagePresentationBlock] {
+    private static func parseGenericRichContent(
+        from dictionary: [String: Any],
+        sourceMessageID: String?
+    ) -> [MessagePresentationBlock] {
         if let tag = dictionary["tag"] as? String {
             let normalizedTag = tag.lowercased()
             if ["markdown", "md", "lark_md"].contains(normalizedTag) {
@@ -411,9 +454,12 @@ enum MessagePresentationParser {
             if ["table", "sheet"].contains(normalizedTag) {
                 return tableBlocks(from: dictionary)
             }
+            if normalizedTag == "img" {
+                return [imageBlock(from: dictionary, sourceMessageID: sourceMessageID)]
+            }
         }
 
-        if let nestedBlocks = nestedRichTextBlocks(from: dictionary), !nestedBlocks.isEmpty {
+        if let nestedBlocks = nestedRichTextBlocks(from: dictionary, sourceMessageID: sourceMessageID), !nestedBlocks.isEmpty {
             return nestedBlocks
         }
 
@@ -424,11 +470,19 @@ enum MessagePresentationParser {
         return parseMarkdownBlocks(from: richText)
     }
 
-    private static func nestedRichTextBlocks(from dictionary: [String: Any]) -> [MessagePresentationBlock]? {
+    private static func nestedRichTextBlocks(
+        from dictionary: [String: Any],
+        sourceMessageID: String?
+    ) -> [MessagePresentationBlock]? {
         let nestedKeys = ["elements", "children", "items", "fields"]
         for key in nestedKeys {
             if let elements = dictionary[key] as? [Any] {
-                let blocks = parseRichTextParagraph(elements)
+                let blocks: [MessagePresentationBlock]
+                if elements.allSatisfy({ $0 is [Any] }) {
+                    blocks = parseRichTextParagraphs(from: elements, sourceMessageID: sourceMessageID)
+                } else {
+                    blocks = parseRichTextParagraph(elements, sourceMessageID: sourceMessageID)
+                }
                 if !blocks.isEmpty {
                     return blocks
                 }
@@ -437,19 +491,19 @@ enum MessagePresentationParser {
 
         if let content = dictionary["content"] as? [Any] {
             if content.allSatisfy({ $0 is [Any] }) {
-                let blocks = parseRichTextParagraphs(from: content)
+                let blocks = parseRichTextParagraphs(from: content, sourceMessageID: sourceMessageID)
                 if !blocks.isEmpty {
                     return blocks
                 }
             }
-            let blocks = parseRichTextParagraph(content)
+            let blocks = parseRichTextParagraph(content, sourceMessageID: sourceMessageID)
             if !blocks.isEmpty {
                 return blocks
             }
         }
 
         if let textObject = dictionary["text"] as? [String: Any] {
-            let blocks = parseGenericRichContent(from: textObject)
+            let blocks = parseGenericRichContent(from: textObject, sourceMessageID: sourceMessageID)
             if !blocks.isEmpty {
                 return blocks
             }
@@ -473,6 +527,26 @@ enum MessagePresentationParser {
             return richTextString(from: contentObject)
         }
         return ""
+    }
+
+    private static func imageBlock(
+        from dictionary: [String: Any],
+        sourceMessageID: String?
+    ) -> MessagePresentationBlock {
+        let imageKey = firstNonEmptyString(from: [
+            dictionary["image_key"] as? String,
+            dictionary["img_key"] as? String,
+            dictionary["file_key"] as? String
+        ])
+        let fallbackText = firstNonEmptyString(from: [
+            dictionary["text"] as? String,
+            dictionary["fallback"] as? String,
+            dictionary["alt"] as? String
+        ])
+        if let imageKey, let sourceMessageID {
+            return .remoteImage(messageID: sourceMessageID, imageKey: imageKey, fallbackText: fallbackText)
+        }
+        return .placeholder(kind: .image)
     }
 
     private static func tableBlocks(from dictionary: [String: Any]) -> [MessagePresentationBlock] {
@@ -547,7 +621,7 @@ enum MessagePresentationParser {
             if !direct.isEmpty {
                 return direct
             }
-            if let nested = nestedRichTextBlocks(from: dictionary) {
+            if let nested = nestedRichTextBlocks(from: dictionary, sourceMessageID: nil) {
                 return nested
                     .map(\.summaryFragment)
                     .filter { !$0.isEmpty }

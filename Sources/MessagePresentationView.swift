@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct MessagePresentationView: View {
     let presentation: MessagePresentationModel
@@ -78,6 +79,16 @@ struct MessagePresentationView: View {
 
         case .table(let headers, let rows):
             tableView(headers: headers, rows: rows)
+
+        case .remoteImage(let messageID, let imageKey, let fallbackText):
+            RemoteFeishuImageView(
+                messageID: messageID,
+                imageKey: imageKey,
+                fallbackText: fallbackText,
+                foregroundColor: foregroundColor,
+                secondaryColor: secondaryColor,
+                linkColor: linkColor
+            )
 
         case .divider:
             Rectangle()
@@ -169,6 +180,88 @@ struct MessagePresentationView: View {
             return Array(row.prefix(columnCount))
         }
         return row + Array(repeating: "", count: max(0, columnCount - row.count))
+    }
+}
+
+private struct RemoteFeishuImageView: View {
+    let messageID: String
+    let imageKey: String
+    let fallbackText: String?
+    let foregroundColor: Color
+    let secondaryColor: Color
+    let linkColor: Color
+
+    @State private var image: NSImage?
+    @State private var errorMessage: String?
+    @State private var isLoading = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: 420, maxHeight: 320, alignment: .leading)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: isLoading ? "photo" : "exclamationmark.triangle")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(isLoading ? linkColor : secondaryColor)
+                        .frame(width: 18)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(isLoading ? "正在加载图片" : "图片内容")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(foregroundColor)
+
+                        Text(errorMessage ?? fallbackText ?? "正在从飞书下载消息图片。")
+                            .font(.caption)
+                            .foregroundStyle(secondaryColor)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(secondaryColor.opacity(0.08))
+                )
+            }
+        }
+        .task(id: "\(messageID)-\(imageKey)") {
+            await loadImage()
+        }
+    }
+
+    private func loadImage() async {
+        guard image == nil, !isLoading else {
+            return
+        }
+
+        await MainActor.run {
+            isLoading = true
+            errorMessage = nil
+        }
+
+        do {
+            let resource = try await FeishuResourceService.shared.image(
+                messageID: messageID,
+                imageKey: imageKey
+            )
+            guard let loadedImage = NSImage(data: resource.data) else {
+                throw FeishuResourceError.invalidImageData
+            }
+            await MainActor.run {
+                image = loadedImage
+                isLoading = false
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = error.localizedDescription
+                isLoading = false
+            }
+        }
     }
 }
 

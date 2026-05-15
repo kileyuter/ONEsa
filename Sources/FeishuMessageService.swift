@@ -293,7 +293,8 @@ final class FeishuMessageService: @unchecked Sendable {
         let displayContent = contentForPresentation(rawContent: rawContent, item: item)
         let presentation = MessagePresentationParser.parse(
             rawText: displayContent,
-            targetChatID: configuration.targetChatID
+            targetChatID: configuration.targetChatID,
+            sourceMessageID: item.messageID
         )
         guard presentation.hasVisibleContent else {
             return nil

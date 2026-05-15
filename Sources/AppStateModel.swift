@@ -629,7 +629,8 @@ final class AppStateModel: ObservableObject {
     func presentationModel(for message: ChatMessage) -> MessagePresentationModel {
         MessagePresentationParser.parse(
             rawText: message.text,
-            targetChatID: feishuSnapshot.configuration.targetChatID
+            targetChatID: feishuSnapshot.configuration.targetChatID,
+            sourceMessageID: message.externalMessageID
         )
     }
 
