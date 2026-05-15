@@ -76,6 +76,9 @@ struct MessagePresentationView: View {
                     .fill(secondaryColor.opacity(0.12))
             )
 
+        case .table(let headers, let rows):
+            tableView(headers: headers, rows: rows)
+
         case .divider:
             Rectangle()
                 .fill(secondaryColor.opacity(0.22))
@@ -114,6 +117,58 @@ struct MessagePresentationView: View {
         default:
             .system(size: 14, weight: .semibold)
         }
+    }
+
+    private func tableView(headers: [String], rows: [[String]]) -> some View {
+        ScrollView(.horizontal, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 0) {
+                tableRow(headers, isHeader: true)
+
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    tableRow(normalizedTableRow(row, columnCount: headers.count), isHeader: false)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(secondaryColor.opacity(0.22), lineWidth: 1)
+            )
+        }
+    }
+
+    private func tableRow(_ cells: [String], isHeader: Bool) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
+                renderedMarkdownText(cell.isEmpty ? " " : cell)
+                    .font(isHeader ? baseFont.weight(.semibold) : baseFont)
+                    .foregroundStyle(foregroundColor)
+                    .frame(width: 160, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(isHeader ? secondaryColor.opacity(0.12) : Color.clear)
+                    .overlay(alignment: .trailing) {
+                        if index < cells.count - 1 {
+                            Rectangle()
+                                .fill(secondaryColor.opacity(0.18))
+                                .frame(width: 1)
+                        }
+                    }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(secondaryColor.opacity(0.18))
+                .frame(height: 1)
+        }
+    }
+
+    private func normalizedTableRow(_ row: [String], columnCount: Int) -> [String] {
+        if row.count == columnCount {
+            return row
+        }
+        if row.count > columnCount {
+            return Array(row.prefix(columnCount))
+        }
+        return row + Array(repeating: "", count: max(0, columnCount - row.count))
     }
 }
 

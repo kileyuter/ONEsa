@@ -63,6 +63,7 @@ enum MessagePresentationBlock: Equatable {
     case quote(String)
     case listItem(marker: String, depth: Int, text: String)
     case codeBlock(language: String?, code: String)
+    case table(headers: [String], rows: [[String]])
     case divider
     case placeholder(kind: MessageRichContentKind)
 
@@ -77,6 +78,12 @@ enum MessagePresentationBlock: Equatable {
                 .map(String.init)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             return firstLine?.isEmpty == false ? "[代码] \(firstLine!)" : "代码块"
+        case .table(let headers, let rows):
+            let headerText = headers.joined(separator: " / ")
+            let firstRowText = rows.first?.joined(separator: " / ") ?? ""
+            return [headerText, firstRowText]
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: "\n")
         case .divider:
             return ""
         case .placeholder(let kind):
@@ -112,17 +119,28 @@ struct MessagePresentationModel: Equatable {
 }
 
 enum MessagePresentationParser {
-    static func parse(rawText: String, targetChatID: String? = nil) -> MessagePresentationModel {
+    static func parse(
+        rawText: String,
+        targetChatID: String? = nil,
+        leadingQuoteText: String? = nil
+    ) -> MessagePresentationModel {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return .empty
         }
 
-        if let structuredModel = parseStructuredPayload(from: trimmed, targetChatID: targetChatID) {
+        if let structuredModel = parseStructuredPayload(
+            from: trimmed,
+            targetChatID: targetChatID,
+            leadingQuoteText: leadingQuoteText
+        ) {
             return structuredModel
         }
 
-        return buildModel(from: parseMarkdownBlocks(from: trimmed), targetChatID: nil)
+        return buildModel(
+            from: quoteBlocks(from: leadingQuoteText) + parseMarkdownBlocks(from: trimmed),
+            targetChatID: nil
+        )
     }
 
     static func plainText(fromMarkdown text: String) -> String {
@@ -147,7 +165,8 @@ enum MessagePresentationParser {
 
     private static func parseStructuredPayload(
         from text: String,
-        targetChatID: String?
+        targetChatID: String?,
+        leadingQuoteText: String?
     ) -> MessagePresentationModel? {
         guard
             let data = text.data(using: .utf8),
@@ -156,19 +175,24 @@ enum MessagePresentationParser {
             return nil
         }
 
-        return parseStructuredObject(object, targetChatID: targetChatID)
+        return parseStructuredObject(object, targetChatID: targetChatID, leadingQuoteText: leadingQuoteText)
     }
 
     private static func parseStructuredObject(
         _ object: Any,
-        targetChatID: String?
+        targetChatID: String?,
+        leadingQuoteText: String?
     ) -> MessagePresentationModel? {
         if let string = object as? String {
-            return parse(rawText: string, targetChatID: targetChatID)
+            return parse(rawText: string, targetChatID: targetChatID, leadingQuoteText: leadingQuoteText)
         }
 
         if let dictionary = object as? [String: Any] {
-            return parseStructuredDictionary(dictionary, targetChatID: targetChatID)
+            return parseStructuredDictionary(
+                dictionary,
+                targetChatID: targetChatID,
+                leadingQuoteText: leadingQuoteText
+            )
         }
 
         if let paragraphs = object as? [Any] {
@@ -176,7 +200,7 @@ enum MessagePresentationParser {
             guard !blocks.isEmpty else {
                 return nil
             }
-            return buildModel(from: blocks, targetChatID: targetChatID)
+            return buildModel(from: quoteBlocks(from: leadingQuoteText) + blocks, targetChatID: targetChatID)
         }
 
         return nil
@@ -184,14 +208,26 @@ enum MessagePresentationParser {
 
     private static func parseStructuredDictionary(
         _ dictionary: [String: Any],
-        targetChatID: String?
+        targetChatID: String?,
+        leadingQuoteText: String?
     ) -> MessagePresentationModel? {
+        let quoteText = firstNonEmptyString(
+            from: [
+                leadingQuoteText,
+                dictionary["quote_text"] as? String,
+                dictionary["reply_to_text"] as? String
+            ]
+        )
+
         if let plainText = dictionary["text"] as? String {
-            return buildModel(from: parseMarkdownBlocks(from: plainText), targetChatID: nil)
+            return buildModel(
+                from: quoteBlocks(from: quoteText) + parseMarkdownBlocks(from: plainText),
+                targetChatID: nil
+            )
         }
 
         if let content = dictionary["content"] as? String, content != dictionary["text"] as? String {
-            let nested = parse(rawText: content, targetChatID: targetChatID)
+            let nested = parse(rawText: content, targetChatID: targetChatID, leadingQuoteText: quoteText)
             if nested.hasVisibleContent {
                 return nested
             }
@@ -200,24 +236,33 @@ enum MessagePresentationParser {
         if let payload = richTextPayload(from: dictionary) {
             let blocks = parseRichTextPayload(payload)
             if !blocks.isEmpty {
-                return buildModel(from: blocks, targetChatID: targetChatID)
+                return buildModel(from: quoteBlocks(from: quoteText) + blocks, targetChatID: targetChatID)
             }
         }
 
         let extractedBlocks = parseGenericRichContent(from: dictionary)
         if !extractedBlocks.isEmpty {
-            return buildModel(from: extractedBlocks, targetChatID: targetChatID)
+            return buildModel(
+                from: quoteBlocks(from: quoteText) + extractedBlocks,
+                targetChatID: targetChatID
+            )
         }
 
         if let kind = placeholderKind(from: dictionary) {
-            return buildModel(from: [.placeholder(kind: kind)], targetChatID: targetChatID)
+            return buildModel(
+                from: quoteBlocks(from: quoteText) + [.placeholder(kind: kind)],
+                targetChatID: targetChatID
+            )
         }
 
         guard !dictionary.isEmpty else {
             return nil
         }
 
-        return buildModel(from: [.placeholder(kind: .unknown)], targetChatID: targetChatID)
+        return buildModel(
+            from: quoteBlocks(from: quoteText) + [.placeholder(kind: .unknown)],
+            targetChatID: targetChatID
+        )
     }
 
     private static func richTextPayload(from dictionary: [String: Any]) -> [String: Any]? {
@@ -335,7 +380,7 @@ enum MessagePresentationParser {
                 blocks.append(.placeholder(kind: .attachment))
             case "sheet", "table":
                 flushParagraph()
-                blocks.append(.placeholder(kind: .table))
+                blocks.append(contentsOf: tableBlocks(from: dictionary))
             default:
                 if let text = dictionary["text"] as? String, !text.isEmpty {
                     inlineParts.append(text)
@@ -362,6 +407,9 @@ enum MessagePresentationParser {
             if ["plain_text", "text"].contains(normalizedTag) {
                 let text = richTextString(from: dictionary).trimmingCharacters(in: .whitespacesAndNewlines)
                 return text.isEmpty ? [] : [.paragraph(text)]
+            }
+            if ["table", "sheet"].contains(normalizedTag) {
+                return tableBlocks(from: dictionary)
             }
         }
 
@@ -425,6 +473,111 @@ enum MessagePresentationParser {
             return richTextString(from: contentObject)
         }
         return ""
+    }
+
+    private static func tableBlocks(from dictionary: [String: Any]) -> [MessagePresentationBlock] {
+        guard let table = extractTable(from: dictionary) else {
+            return [.placeholder(kind: .table)]
+        }
+        return [.table(headers: table.headers, rows: table.rows)]
+    }
+
+    private static func extractTable(from dictionary: [String: Any]) -> (headers: [String], rows: [[String]])? {
+        let rowKeys = ["rows", "data", "items", "content"]
+        for key in rowKeys {
+            if let rows = dictionary[key] as? [[Any]],
+               let table = tableFromRawRows(rows) {
+                return table
+            }
+            if let rowDictionaries = dictionary[key] as? [[String: Any]],
+               let table = tableFromDictionaries(rowDictionaries) {
+                return table
+            }
+        }
+
+        if let cells = dictionary["cells"] as? [Any],
+           let table = tableFromRawRows([cells]) {
+            return table
+        }
+
+        return nil
+    }
+
+    private static func tableFromRawRows(_ rawRows: [[Any]]) -> (headers: [String], rows: [[String]])? {
+        let rows = rawRows
+            .map { row in
+                row.map { cellText(from: $0) }
+                    .map { plainText(fromMarkdown: $0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            }
+            .filter { !$0.allSatisfy(\.isEmpty) }
+
+        guard rows.count >= 2 else {
+            return nil
+        }
+        return (headers: rows[0], rows: Array(rows.dropFirst()))
+    }
+
+    private static func tableFromDictionaries(
+        _ rowDictionaries: [[String: Any]]
+    ) -> (headers: [String], rows: [[String]])? {
+        let orderedKeys = rowDictionaries
+            .flatMap { $0.keys }
+            .reduce(into: [String]()) { result, key in
+                if !result.contains(key) {
+                    result.append(key)
+                }
+            }
+
+        guard orderedKeys.count >= 2 else {
+            return nil
+        }
+
+        let rows = rowDictionaries.map { row in
+            orderedKeys.map { cellText(from: row[$0] as Any) }
+        }
+        return (headers: orderedKeys, rows: rows)
+    }
+
+    private static func cellText(from value: Any) -> String {
+        if let string = value as? String {
+            return string
+        }
+        if let dictionary = value as? [String: Any] {
+            let direct = richTextString(from: dictionary).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !direct.isEmpty {
+                return direct
+            }
+            if let nested = nestedRichTextBlocks(from: dictionary) {
+                return nested
+                    .map(\.summaryFragment)
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n")
+            }
+            return ""
+        }
+        if let values = value as? [Any] {
+            return values
+                .map { cellText(from: $0) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+        }
+        return ""
+    }
+
+    private static func quoteBlocks(from quoteText: String?) -> [MessagePresentationBlock] {
+        guard
+            let quoteText = quoteText?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !quoteText.isEmpty
+        else {
+            return []
+        }
+        return [.quote(quoteText)]
+    }
+
+    private static func firstNonEmptyString(from values: [String?]) -> String? {
+        values
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
     }
 
     private static func attributedMention(from dictionary: [String: Any]) -> String {
@@ -577,6 +730,13 @@ enum MessagePresentationParser {
                 continue
             }
 
+            if let table = parseMarkdownTable(lines: lines, startIndex: index) {
+                flushParagraph()
+                blocks.append(table.block)
+                index = table.nextIndex
+                continue
+            }
+
             if let heading = parseHeading(from: line) {
                 flushParagraph()
                 blocks.append(heading)
@@ -613,6 +773,81 @@ enum MessagePresentationParser {
 
         flushParagraph()
         return blocks
+    }
+
+    private static func parseMarkdownTable(
+        lines: [String],
+        startIndex: Int
+    ) -> (block: MessagePresentationBlock, nextIndex: Int)? {
+        guard startIndex + 1 < lines.count else {
+            return nil
+        }
+
+        let headerLine = lines[startIndex].trimmingCharacters(in: .whitespaces)
+        let separatorLine = lines[startIndex + 1].trimmingCharacters(in: .whitespaces)
+        guard
+            looksLikeTableRow(headerLine),
+            looksLikeTableSeparator(separatorLine)
+        else {
+            return nil
+        }
+
+        let headers = splitMarkdownTableRow(headerLine)
+        guard !headers.isEmpty else {
+            return nil
+        }
+
+        var rows: [[String]] = []
+        var index = startIndex + 2
+        while index < lines.count {
+            let rowLine = lines[index].trimmingCharacters(in: .whitespaces)
+            guard looksLikeTableRow(rowLine), !looksLikeTableSeparator(rowLine) else {
+                break
+            }
+            let row = splitMarkdownTableRow(rowLine)
+            if !row.isEmpty {
+                rows.append(row)
+            }
+            index += 1
+        }
+
+        guard !rows.isEmpty else {
+            return nil
+        }
+        return (.table(headers: headers, rows: rows), index)
+    }
+
+    private static func looksLikeTableRow(_ line: String) -> Bool {
+        line.contains("|") && splitMarkdownTableRow(line).count >= 2
+    }
+
+    private static func looksLikeTableSeparator(_ line: String) -> Bool {
+        let cells = splitMarkdownTableRow(line)
+        guard cells.count >= 2 else {
+            return false
+        }
+        return cells.allSatisfy { cell in
+            let normalized = cell.trimmingCharacters(in: .whitespaces)
+            guard normalized.count >= 3 else {
+                return false
+            }
+            return normalized.allSatisfy { character in
+                character == "-" || character == ":" || character.isWhitespace
+            }
+        }
+    }
+
+    private static func splitMarkdownTableRow(_ line: String) -> [String] {
+        var trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("|") {
+            trimmed.removeFirst()
+        }
+        if trimmed.hasSuffix("|") {
+            trimmed.removeLast()
+        }
+        return trimmed
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .map { plainText(fromMarkdown: String($0).trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
 
     private static func isDividerLine(_ trimmedLine: String) -> Bool {

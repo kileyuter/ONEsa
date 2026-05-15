@@ -290,8 +290,9 @@ final class FeishuMessageService: @unchecked Sendable {
         guard let rawContent = item.body?.content ?? item.content, !rawContent.isEmpty else {
             return nil
         }
+        let displayContent = contentForPresentation(rawContent: rawContent, item: item)
         let presentation = MessagePresentationParser.parse(
-            rawText: rawContent,
+            rawText: displayContent,
             targetChatID: configuration.targetChatID
         )
         guard presentation.hasVisibleContent else {
@@ -299,10 +300,39 @@ final class FeishuMessageService: @unchecked Sendable {
         }
         return FeishuReplyMessage(
             messageID: item.messageID,
-            text: rawContent,
+            text: displayContent,
             senderDescription: item.sender?.description ?? "unknown",
             createTime: date(fromFeishuTimestamp: item.createTime) ?? Date()
         )
+    }
+
+    private static func contentForPresentation(rawContent: String, item: FeishuMessageItem) -> String {
+        guard let quoteText = quoteText(from: item) else {
+            return rawContent
+        }
+
+        let payload: [String: String] = [
+            "quote_text": quoteText,
+            "content": rawContent
+        ]
+        guard
+            let data = try? JSONSerialization.data(withJSONObject: payload),
+            let wrapped = String(data: data, encoding: .utf8)
+        else {
+            return rawContent
+        }
+        return wrapped
+    }
+
+    private static func quoteText(from item: FeishuMessageItem) -> String? {
+        if let quoteText = item.quote?.displayText {
+            return quoteText
+        }
+
+        let hasReplyRelationship = [item.parentID, item.rootID]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .contains { !$0.isEmpty && $0 != item.messageID }
+        return hasReplyRelationship ? "回复了一条消息" : nil
     }
 
     private static func isAISender(
@@ -409,16 +439,71 @@ private struct FeishuListMessagesData: Decodable {
 private struct FeishuMessageItem: Decodable {
     let messageID: String
     let createTime: String?
+    let parentID: String?
+    let rootID: String?
     let sender: FeishuMessageSender?
     let body: FeishuMessageBody?
     let content: String?
+    let quote: FeishuMessageQuote?
 
     private enum CodingKeys: String, CodingKey {
         case messageID = "message_id"
         case createTime = "create_time"
+        case parentID = "parent_id"
+        case rootID = "root_id"
         case sender
         case body
         case content
+        case quote
+    }
+}
+
+private struct FeishuMessageQuote: Decodable {
+    let messageID: String?
+    let text: String?
+    let content: String?
+
+    var displayText: String? {
+        let candidates = [text, extractedText(from: content), messageID.map { "回复消息：\($0)" }]
+        return candidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case messageID = "message_id"
+        case id
+        case text
+        case content
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        messageID = try container.decodeIfPresent(String.self, forKey: .messageID)
+            ?? container.decodeIfPresent(String.self, forKey: .id)
+        text = try container.decodeIfPresent(String.self, forKey: .text)
+        content = try container.decodeIfPresent(String.self, forKey: .content)
+    }
+
+    private func extractedText(from content: String?) -> String? {
+        guard
+            let content,
+            let data = content.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data)
+        else {
+            return content
+        }
+
+        if let dictionary = object as? [String: Any] {
+            if let text = dictionary["text"] as? String {
+                return text
+            }
+            if let title = dictionary["title"] as? String {
+                return title
+            }
+        }
+
+        return nil
     }
 }
 
