@@ -177,7 +177,8 @@ enum MessagePresentationParser {
             (#"\*\*([^*]+)\*\*"#, "$1"),
             (#"\*([^*]+)\*"#, "$1"),
             (#"__([^_]+)__"#, "$1"),
-            (#"_([^_]+)_"#, "$1")
+            (#"_([^_]+)_"#, "$1"),
+            (#"~~([^~]+)~~"#, "$1")
         ]
 
         for (pattern, template) in replacements {
@@ -292,6 +293,15 @@ enum MessagePresentationParser {
             )
         }
 
+        let recoveredText = deepTextString(from: dictionary)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !recoveredText.isEmpty {
+            return buildModel(
+                from: quoteBlocks(from: quoteText) + parseMarkdownBlocks(from: recoveredText),
+                targetChatID: targetChatID
+            )
+        }
+
         if let kind = placeholderKind(from: dictionary) {
             return buildModel(
                 from: quoteBlocks(from: quoteText) + [.placeholder(kind: kind)],
@@ -373,6 +383,19 @@ enum MessagePresentationParser {
         var blocks: [MessagePresentationBlock] = []
         var inlineParts: [String] = []
 
+        func appendInlineBlock(_ text: String) {
+            let inlineText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !inlineText.isEmpty else {
+                return
+            }
+            let parsedBlocks = parseMarkdownBlocks(from: inlineText)
+            if parsedBlocks.count == 1, case .paragraph = parsedBlocks[0] {
+                blocks.append(.paragraph(inlineText))
+            } else {
+                blocks.append(contentsOf: parsedBlocks)
+            }
+        }
+
         func flushParagraph() {
             let combined = inlineParts.joined()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -380,7 +403,7 @@ enum MessagePresentationParser {
                 inlineParts.removeAll()
                 return
             }
-            blocks.append(.paragraph(combined))
+            appendInlineBlock(combined)
             inlineParts.removeAll()
         }
 
@@ -393,7 +416,7 @@ enum MessagePresentationParser {
             switch tag {
             case "text":
                 if let text = dictionary["text"] as? String {
-                    inlineParts.append(text)
+                    inlineParts.append(markdownText(text, styles: dictionary["style"] as? [String]))
                 }
             case "a":
                 let label = (dictionary["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -440,7 +463,7 @@ enum MessagePresentationParser {
                 blocks.append(contentsOf: tableBlocks(from: dictionary))
             default:
                 if let text = dictionary["text"] as? String, !text.isEmpty {
-                    inlineParts.append(text)
+                    inlineParts.append(markdownText(text, styles: dictionary["style"] as? [String]))
                 } else if let nestedBlocks = nestedRichTextBlocks(
                     from: dictionary,
                     sourceMessageID: sourceMessageID
@@ -448,8 +471,11 @@ enum MessagePresentationParser {
                     flushParagraph()
                     blocks.append(contentsOf: nestedBlocks)
                 } else {
-                    flushParagraph()
-                    blocks.append(.placeholder(kind: placeholderKind(from: dictionary) ?? .unknown))
+                    let recoveredText = deepTextString(from: dictionary)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !recoveredText.isEmpty {
+                        inlineParts.append(recoveredText)
+                    }
                 }
             }
         }
@@ -484,10 +510,16 @@ enum MessagePresentationParser {
         }
 
         let richText = richTextString(from: dictionary).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !richText.isEmpty else {
+        if !richText.isEmpty {
+            return parseMarkdownBlocks(from: richText)
+        }
+
+        let recoveredText = deepTextString(from: dictionary)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !recoveredText.isEmpty else {
             return []
         }
-        return parseMarkdownBlocks(from: richText)
+        return parseMarkdownBlocks(from: recoveredText)
     }
 
     private static func nestedRichTextBlocks(
@@ -547,6 +579,76 @@ enum MessagePresentationParser {
             return richTextString(from: contentObject)
         }
         return ""
+    }
+
+    private static func deepTextString(from value: Any, depth: Int = 0) -> String {
+        guard depth < 8 else {
+            return ""
+        }
+        if let string = value as? String {
+            return string
+        }
+        if let dictionary = value as? [String: Any] {
+            let preferredKeys = [
+                "text",
+                "content",
+                "plain_text",
+                "markdown",
+                "value",
+                "title",
+                "subtitle",
+                "description",
+                "alt"
+            ]
+            var parts: [String] = []
+            for key in preferredKeys {
+                if let nestedValue = dictionary[key] {
+                    let text = deepTextString(from: nestedValue, depth: depth + 1)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !text.isEmpty {
+                        parts.append(text)
+                    }
+                }
+            }
+            for key in ["elements", "children", "items", "fields", "body"] {
+                if let nestedValue = dictionary[key] {
+                    let text = deepTextString(from: nestedValue, depth: depth + 1)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !text.isEmpty {
+                        parts.append(text)
+                    }
+                }
+            }
+            return parts.joined(separator: "\n")
+        }
+        if let array = value as? [Any] {
+            return array
+                .map { deepTextString(from: $0, depth: depth + 1).trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+        }
+        return ""
+    }
+
+    private static func markdownText(_ text: String, styles: [String]?) -> String {
+        var result = text
+        let normalizedStyles = Set((styles ?? []).map { $0.lowercased() })
+        if normalizedStyles.contains("bold") {
+            result = "**\(result)**"
+        }
+        if normalizedStyles.contains("italic") {
+            result = "*\(result)*"
+        }
+        if normalizedStyles.contains("underline") {
+            result = "__\(result)__"
+        }
+        if normalizedStyles.contains("linethrough")
+            || normalizedStyles.contains("line_through")
+            || normalizedStyles.contains("strikethrough")
+            || normalizedStyles.contains("strike") {
+            result = "~~\(result)~~"
+        }
+        return result
     }
 
     private static func imageBlock(
