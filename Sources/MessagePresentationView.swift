@@ -211,11 +211,11 @@ private struct RemoteFeishuImageView: View {
                         .frame(width: 18)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(isLoading ? "正在加载图片" : "图片内容")
+                        Text(imagePlaceholderTitle)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(foregroundColor)
 
-                        Text(errorMessage ?? fallbackText ?? "正在从飞书下载消息图片。")
+                        Text(imagePlaceholderDetail)
                             .font(.caption)
                             .foregroundStyle(secondaryColor)
                             .fixedSize(horizontal: false, vertical: true)
@@ -245,6 +245,20 @@ private struct RemoteFeishuImageView: View {
         }
 
         do {
+            if let cached = await FeishuResourceService.shared.cachedImage(
+                messageID: messageID,
+                imageKey: imageKey
+            ) {
+                guard let cachedImage = NSImage(data: cached.data) else {
+                    throw FeishuResourceError.invalidImageData
+                }
+                await MainActor.run {
+                    image = cachedImage
+                    isLoading = false
+                }
+                return
+            }
+
             let resource = try await FeishuResourceService.shared.image(
                 messageID: messageID,
                 imageKey: imageKey
@@ -262,6 +276,27 @@ private struct RemoteFeishuImageView: View {
                 isLoading = false
             }
         }
+    }
+
+    private var imagePlaceholderTitle: String {
+        if isLoading {
+            return "正在加载图片"
+        }
+        if errorMessage != nil {
+            return "图片暂不可查看"
+        }
+        return "图片内容"
+    }
+
+    private var imagePlaceholderDetail: String {
+        if let errorMessage {
+            let fallback = fallbackText?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let fallback, !fallback.isEmpty {
+                return "\(errorMessage)\n飞书提示：\(fallback)"
+            }
+            return errorMessage
+        }
+        return fallbackText ?? "正在从飞书下载消息图片。"
     }
 }
 

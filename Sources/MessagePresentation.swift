@@ -109,6 +109,11 @@ enum MessagePresentationBlock: Equatable {
     }
 }
 
+struct MessageRemoteImageReference: Hashable {
+    let messageID: String
+    let imageKey: String
+}
+
 struct MessagePresentationModel: Equatable {
     let blocks: [MessagePresentationBlock]
     let summaryText: String
@@ -118,6 +123,21 @@ struct MessagePresentationModel: Equatable {
 
     var hasVisibleContent: Bool {
         !blocks.isEmpty && !summaryText.isEmpty
+    }
+
+    var remoteImages: [MessageRemoteImageReference] {
+        var uniqueImages = Set<MessageRemoteImageReference>()
+        var images: [MessageRemoteImageReference] = []
+        for block in blocks {
+            guard case .remoteImage(let messageID, let imageKey, _) = block else {
+                continue
+            }
+            let image = MessageRemoteImageReference(messageID: messageID, imageKey: imageKey)
+            if uniqueImages.insert(image).inserted {
+                images.append(image)
+            }
+        }
+        return images
     }
 }
 

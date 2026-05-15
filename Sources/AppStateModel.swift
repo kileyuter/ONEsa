@@ -1816,6 +1816,7 @@ final class AppStateModel: ObservableObject {
             appendMessage(message)
             existingMessageIDs.insert(reply.messageID)
             appendedMessages.append(message)
+            prefetchResourcesIfNeeded(for: message)
         }
         guard let turn = buildAssistantTurn(from: appendedMessages, badge: badge) else {
             return
@@ -1836,6 +1837,20 @@ final class AppStateModel: ObservableObject {
             presentFloatingNotificationIfNeeded(turn: turn, createdAt: turn.latestTimestamp)
         } else {
             dismissFloatingNotification()
+        }
+    }
+
+    private func prefetchResourcesIfNeeded(for message: ChatMessage) {
+        guard message.sender == .assistant else {
+            return
+        }
+        let images = presentationModel(for: message).remoteImages
+        guard !images.isEmpty else {
+            return
+        }
+
+        Task {
+            await FeishuResourceService.shared.prefetchImages(images)
         }
     }
 
