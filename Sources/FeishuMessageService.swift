@@ -297,8 +297,16 @@ final class FeishuMessageService: @unchecked Sendable {
     ) async throws -> (item: FeishuMessageItem, rawItem: [String: Any]?) {
         guard
             let encodedMessageID = messageID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-            let url = URL(string: "https://open.feishu.cn/open-apis/im/v1/messages/\(encodedMessageID)")
+            var components = URLComponents(
+                string: "https://open.feishu.cn/open-apis/im/v1/messages/\(encodedMessageID)"
+            )
         else {
+            throw FeishuMessageError.invalidURL
+        }
+        components.queryItems = [
+            URLQueryItem(name: "card_msg_content_type", value: "user_card_content")
+        ]
+        guard let url = components.url else {
             throw FeishuMessageError.invalidURL
         }
 

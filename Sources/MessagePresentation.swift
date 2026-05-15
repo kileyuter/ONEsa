@@ -546,7 +546,7 @@ enum MessagePresentationParser {
             }
         }
 
-        let nestedKeys = ["elements", "children", "items", "fields"]
+        let nestedKeys = ["elements", "children", "items", "fields", "body"]
         for key in nestedKeys {
             if let elements = dictionary[key] as? [Any] {
                 let blocks: [MessagePresentationBlock]
@@ -555,6 +555,12 @@ enum MessagePresentationParser {
                 } else {
                     blocks = parseRichTextParagraph(elements, sourceMessageID: sourceMessageID)
                 }
+                if !blocks.isEmpty {
+                    return blocks
+                }
+            }
+            if let nested = dictionary[key] as? [String: Any] {
+                let blocks = parseGenericRichContent(from: nested, sourceMessageID: sourceMessageID)
                 if !blocks.isEmpty {
                     return blocks
                 }
